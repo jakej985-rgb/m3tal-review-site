@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 
+import { BRAND } from './data'
 import { useLocation } from './lib/router'
 import { Landing } from './sections/Landing'
 import { NotFound } from './sections/NotFound'
@@ -17,9 +18,9 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (pathname === '/') document.title = 'Triage — Bug tracking for teams that ship fast'
-    else if (pathname === '/styleguide') document.title = 'Style guide · Triage'
-    else if (!pathname.startsWith('/app')) document.title = 'Not found · Triage'
+    if (pathname === '/') document.title = `${BRAND.name} — ${BRAND.tagline}`
+    else if (pathname === '/styleguide') document.title = `Style guide · ${BRAND.name}`
+    else if (!pathname.startsWith('/app')) document.title = `Not found · ${BRAND.name}`
   }, [pathname])
 
   if (pathname === '/') return <Landing />

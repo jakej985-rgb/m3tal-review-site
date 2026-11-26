@@ -1,4 +1,4 @@
-import { Calendar, Repeat, Tag } from 'lucide-react'
+import { Calendar, FileCode, Repeat, Tag } from 'lucide-react'
 import { type ReactNode, useRef, useState } from 'react'
 
 import { Avatar } from '@/components/Avatar'
@@ -10,7 +10,7 @@ import { PriorityIcon, priorityName } from '@/components/PriorityIcon'
 import { Picker } from '@/components/Picker'
 import type { MenuOption } from '@/components/SelectMenu'
 import { StatusIcon, statusName } from '@/components/StatusIcon'
-import { type Cycle, type Label, type Member, PRIORITIES, type PriorityId, STATUSES, type StatusId } from '@/data'
+import { type Cycle, type Label, LANGS, type Lang, type Member, PRIORITIES, type PriorityId, STATUSES, type StatusId } from '@/data'
 import { cn } from '@/lib/cn'
 import { addDays, isoDay, shortDate } from '@/lib/dates'
 import { useStore } from './store'
@@ -61,6 +61,20 @@ export function PriorityPicker({ value, onChange, variant = 'field' }: { value: 
         <button type="button" {...p} className={variant === 'icon' ? iconBtn : fieldBtn} aria-label={variant === 'icon' ? `Priority: ${priorityName(value)}` : undefined}>
           <PriorityIcon priority={value} />
           {variant === 'field' && <span className="truncate">{priorityName(value)}</span>}
+        </button>
+      )}
+    </Picker>
+  )
+}
+
+export function LangPicker({ value, onChange }: { value: Lang; onChange: (l: Lang) => void }) {
+  const name = LANGS.find((l) => l.id === value)?.name ?? value
+  return (
+    <Picker label="Language" options={LANGS.map((l) => ({ value: l.id, label: l.name, hint: l.id }))} selected={[value]} onSelect={onChange} placeholder="Choose language…">
+      {(p) => (
+        <button type="button" {...p} className={fieldBtn}>
+          <FileCode className="size-3.5 shrink-0 text-muted" aria-hidden />
+          <span className="truncate">{name}</span>
         </button>
       )}
     </Picker>

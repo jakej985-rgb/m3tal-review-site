@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 
 import { Skeleton } from '@/components/Skeleton'
 import { STATUS_COLOR } from '@/components/StatusIcon'
-import type { StatusId } from '@/data'
+import { BRAND, type Lang, type StatusId } from '@/data'
 import { cn } from '@/lib/cn'
 
 /*
@@ -12,16 +12,16 @@ import { cn } from '@/lib/cn'
   let it auto-advance) and the hatched selection and the detail pane follow.
 */
 
-type Row = { id: number; status: StatusId; dot: string; w: number }
+type Row = { id: number; lang: Lang; status: StatusId; dot: string; w: number }
 
 const ROWS: Row[] = [
-  { id: 142, status: 'blocked', dot: 'var(--c-progress)', w: 274 },
-  { id: 139, status: 'blocked', dot: 'var(--c-blocked)', w: 335 },
-  { id: 138, status: 'in_progress', dot: 'var(--c-todo)', w: 244 },
-  { id: 135, status: 'todo', dot: 'var(--c-done)', w: 305 },
-  { id: 131, status: 'canceled', dot: 'var(--c-todo)', w: 213 },
-  { id: 128, status: 'in_progress', dot: 'var(--c-progress)', w: 290 },
-  { id: 125, status: 'todo', dot: 'var(--c-done)', w: 259 },
+  { id: 142, lang: 'TS', status: 'blocked', dot: 'var(--c-progress)', w: 274 },
+  { id: 139, lang: 'GO', status: 'blocked', dot: 'var(--c-blocked)', w: 335 },
+  { id: 138, lang: 'TS', status: 'in_progress', dot: 'var(--c-todo)', w: 244 },
+  { id: 135, lang: 'GO', status: 'todo', dot: 'var(--c-done)', w: 305 },
+  { id: 131, lang: 'GO', status: 'canceled', dot: 'var(--c-todo)', w: 213 },
+  { id: 128, lang: 'TS', status: 'in_progress', dot: 'var(--c-progress)', w: 290 },
+  { id: 125, lang: 'TS', status: 'todo', dot: 'var(--c-done)', w: 259 },
 ]
 
 const PROPS = ['Status', 'Priority', 'Assignee', 'Due'] as const
@@ -51,7 +51,7 @@ export function ProductMock({ className }: { className?: string }) {
   return (
     <figure
       className={cn('overflow-hidden rounded-t-frame border border-b-0 border-line-strong bg-surface', className)}
-      aria-label="Preview of the Triage app: sidebar, issue list and issue details"
+      aria-label={`Preview of the ${BRAND.name} tracker: sidebar, issue list and issue details`}
       onPointerEnter={() => setAuto(false)}
       onPointerLeave={() => setAuto(true)}
     >
@@ -106,7 +106,9 @@ export function ProductMock({ className }: { className?: string }) {
                 )}
                 <span className="relative z-[1] flex items-center gap-3">
                   <MockStatus status={r.status} />
-                  <span className="font-mono text-[12px] tracking-[0.02em] text-muted">TRG-{r.id}</span>
+                  <span className="font-mono text-[12px] tracking-[0.02em] text-muted">
+                    {BRAND.prefix}-{r.lang}-{r.id}
+                  </span>
                 </span>
                 <Skeleton w={r.w} h={6} className="relative z-[1] max-w-[45%] rounded-full" />
                 <span className="relative z-[1] ml-auto flex items-center gap-4">

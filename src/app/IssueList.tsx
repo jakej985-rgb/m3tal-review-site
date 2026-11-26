@@ -64,7 +64,7 @@ export const IssueRow = memo(function IssueRow({ issue, labels, selected, focuse
         onClick={() => onOpen(issue.number)}
         className="flex h-full min-w-0 flex-1 items-center gap-3 pl-1 text-left focus-visible:outline-offset-[-2px]"
       >
-        <span className="w-[68px] shrink-0 font-mono text-[12px] text-muted">{issueKey(issue.number)}</span>
+        <span className="w-[96px] shrink-0 font-mono text-[12px] text-muted">{issueKey(issue.number)}</span>
         <span className={cn('truncate text-[13.5px]', issue.status === 'done' || issue.status === 'canceled' ? 'text-muted' : 'text-fg')}>{issue.title}</span>
         <span className="ml-auto hidden shrink-0 items-center gap-1.5 pl-3 lg:flex">
           {chips.slice(0, 2).map((l) => (

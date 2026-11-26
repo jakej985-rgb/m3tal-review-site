@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Drawer } from '@/components/Drawer'
 import { ToastProvider } from '@/components/Toast'
+import { BRAND } from '@/data'
 import { NotFound } from '@/sections/NotFound'
 import { navigate, setQuery, useLocation } from '@/lib/router'
 import { CommandPalette } from './CommandPalette'
@@ -14,7 +15,7 @@ import { Sidebar } from './Sidebar'
 import { EMPTY_FILTERS, type Filters, type IssueDraft } from './store'
 import { type AppUI, isTyping, type Prefs, UICtx } from './ui'
 
-const PREFS_KEY = 'triage:prefs'
+const PREFS_KEY = 'm3tal-review:prefs'
 const DEFAULT_PREFS: Prefs = { grouping: 'status', collapsed: [], showClosed: true }
 
 function loadPrefs(): Prefs {
@@ -77,7 +78,7 @@ export function TrackerApp() {
   }, [openCreate])
 
   useEffect(() => {
-    document.title = `${pathname === '/app/inbox' ? 'Inbox' : pathname === '/app/insights' ? 'Insights' : pathname === '/app/settings' ? 'Settings' : pathname === '/app/board' ? 'Board' : 'Issues'} · Triage`
+    document.title = `${pathname === '/app/inbox' ? 'Inbox' : pathname === '/app/insights' ? 'Insights' : pathname === '/app/settings' ? 'Settings' : pathname === '/app/board' ? 'Board' : 'Issues'} · ${BRAND.name}`
   }, [pathname])
 
   const ui = useMemo<AppUI>(

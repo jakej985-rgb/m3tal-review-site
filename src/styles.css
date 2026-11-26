@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 
 /*
-  Triage design tokens.
+  M3TAL Review design tokens.
 
   Near-black, square-cornered, hairline borders. Every colour is a CSS variable
   set per theme (dark is the default, `data-theme="light"` on <html> flips it),

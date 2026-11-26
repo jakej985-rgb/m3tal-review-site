@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 export type Theme = 'dark' | 'light'
-const KEY = 'triage:theme'
+const KEY = 'm3tal-review:theme'
 const listeners = new Set<() => void>()
 
 const read = (): Theme =>

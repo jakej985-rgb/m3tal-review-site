@@ -22,7 +22,7 @@ import {
 
 /*
   The data layer. One state object, persisted to localStorage under
-  `triage:v1`. Every mutation goes through `update`, which saves and notifies.
+  `m3tal-review:v1`. Every mutation goes through `update`, which saves and notifies.
   To move to D1, replace `load` with a fetch and make each action below call
   an API route in src/worker/index.ts (the shapes are already serialisable).
 */
@@ -39,7 +39,7 @@ export type State = {
   notices: Notice[]
 }
 
-const KEY = 'triage:v1'
+const KEY = 'm3tal-review:v1'
 
 function fresh(): State {
   const issues = seedIssues()
@@ -105,13 +105,18 @@ export function useStore<T>(select: (s: State) => T): T {
 export const getState = () => state
 
 const uid = () => Math.random().toString(36).slice(2, 10)
-export const issueKey = (n: number) => `${BRAND.prefix}-${n}`
+// REV-GO-142: brand prefix, language of the code under review, issue number.
+// A number with no issue behind it (just deleted) keeps the bare REV-142 form.
+export const issueKey = (n: number) => {
+  const lang = state.issues.find((i) => i.number === n)?.lang
+  return lang ? `${BRAND.prefix}-${lang}-${n}` : `${BRAND.prefix}-${n}`
+}
 
 /* ------------------------------------------------------------------ */
 /* Actions                                                             */
 /* ------------------------------------------------------------------ */
 
-export type IssueDraft = Pick<Issue, 'title' | 'description' | 'status' | 'priority' | 'assigneeId' | 'labelIds' | 'cycleId' | 'due'>
+export type IssueDraft = Pick<Issue, 'title' | 'description' | 'status' | 'priority' | 'lang' | 'assigneeId' | 'labelIds' | 'cycleId' | 'due'>
 
 export function createIssue(draft: IssueDraft): number {
   const number = state.nextNumber

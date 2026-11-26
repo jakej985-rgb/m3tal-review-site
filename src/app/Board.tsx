@@ -14,7 +14,7 @@ import { cn } from '@/lib/cn'
 import { issueKey, patchIssue, useStore } from './store'
 import { useUI } from './ui'
 
-const MIME = 'application/x-triage-issue'
+const MIME = 'application/x-m3tal-review-issue'
 
 function Card({ issue, selected, onOpen, dragging, onDragStart, onDragEnd }: { issue: Issue; selected: boolean; onOpen: () => void; dragging: boolean; onDragStart: () => void; onDragEnd: () => void }) {
   const labels = useStore((s) => s.labels)

@@ -8,10 +8,10 @@ import { Switch } from '@/components/Switch'
 import { useToast } from '@/components/Toast'
 import { BRAND } from '@/data'
 import { cn } from '@/lib/cn'
-import { AssigneePicker, CyclePicker, DuePicker, LabelsPicker, PriorityPicker, StatusPicker } from './props'
+import { AssigneePicker, CyclePicker, DuePicker, LabelsPicker, LangPicker, PriorityPicker, StatusPicker } from './props'
 import { createIssue, getState, type IssueDraft, issueKey, patchIssue } from './store'
 
-const BLANK: IssueDraft = { title: '', description: '', status: 'todo', priority: 0, assigneeId: null, labelIds: [], cycleId: null, due: null }
+const BLANK: IssueDraft = { title: '', description: '', status: 'todo', priority: 0, lang: 'GO', assigneeId: null, labelIds: [], cycleId: null, due: null }
 
 type Props = {
   open: boolean
@@ -34,8 +34,8 @@ export function IssueModal({ open, editing, defaults, onClose, onCreated }: Prop
     if (editing !== null) {
       const i = getState().issues.find((x) => x.number === editing)
       if (i) {
-        const { title, description, status, priority, assigneeId, labelIds, cycleId, due } = i
-        setDraft({ title, description, status, priority, assigneeId, labelIds, cycleId, due })
+        const { title, description, status, priority, lang, assigneeId, labelIds, cycleId, due } = i
+        setDraft({ title, description, status, priority, lang, assigneeId, labelIds, cycleId, due })
         return
       }
     }
@@ -60,7 +60,7 @@ export function IssueModal({ open, editing, defaults, onClose, onCreated }: Prop
     const n = createIssue({ ...draft, title })
     toast({ title: `${issueKey(n)} created` })
     if (more) {
-      setDraft((d) => ({ ...BLANK, status: d.status, cycleId: d.cycleId, assigneeId: d.assigneeId }))
+      setDraft((d) => ({ ...BLANK, status: d.status, cycleId: d.cycleId, assigneeId: d.assigneeId, lang: d.lang }))
       titleRef.current?.focus()
     } else {
       onCreated(n)
@@ -134,18 +134,20 @@ export function IssueModal({ open, editing, defaults, onClose, onCreated }: Prop
           )}
         </div>
         <Textarea aria-label="Description" placeholder="Add a description…" value={draft.description} onChange={(e) => set('description', e.target.value)} className="[&_textarea]:min-h-28" />
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1 border-t border-line pt-3 sm:grid-cols-3">
+        {/* Eight column-units: Labels spans two, so 4 columns at sm and 2 on mobile both fill every row. */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1 border-t border-line pt-3 sm:grid-cols-4">
           {(
             [
-              ['Status', <StatusPicker key="s" value={draft.status} onChange={(v) => set('status', v)} />],
-              ['Priority', <PriorityPicker key="p" value={draft.priority} onChange={(v) => set('priority', v)} />],
-              ['Assignee', <AssigneePicker key="a" value={draft.assigneeId} onChange={(v) => set('assigneeId', v)} />],
-              ['Labels', <LabelsPicker key="l" value={draft.labelIds} onChange={(v) => set('labelIds', v)} />],
-              ['Cycle', <CyclePicker key="c" value={draft.cycleId} onChange={(v) => set('cycleId', v)} />],
-              ['Due', <DuePicker key="d" value={draft.due} onChange={(v) => set('due', v)} />],
+              ['Status', <StatusPicker key="s" value={draft.status} onChange={(v) => set('status', v)} />, false],
+              ['Priority', <PriorityPicker key="p" value={draft.priority} onChange={(v) => set('priority', v)} />, false],
+              ['Language', <LangPicker key="g" value={draft.lang} onChange={(v) => set('lang', v)} />, false],
+              ['Assignee', <AssigneePicker key="a" value={draft.assigneeId} onChange={(v) => set('assigneeId', v)} />, false],
+              ['Labels', <LabelsPicker key="l" value={draft.labelIds} onChange={(v) => set('labelIds', v)} />, true],
+              ['Cycle', <CyclePicker key="c" value={draft.cycleId} onChange={(v) => set('cycleId', v)} />, false],
+              ['Due', <DuePicker key="d" value={draft.due} onChange={(v) => set('due', v)} />, false],
             ] as const
-          ).map(([name, el]) => (
-            <div key={name} className="flex min-w-0 flex-col pl-2">
+          ).map(([name, el, wide]) => (
+            <div key={name} className={cn('flex min-w-0 flex-col pl-2', wide && 'col-span-2')}>
               <span className="text-[11px] text-muted">{name}</span>
               {el}
             </div>

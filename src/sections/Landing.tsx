@@ -1,4 +1,4 @@
-import { ArrowRight, Bell, ChartColumn, Check, Kanban, Keyboard, Layers, Repeat } from 'lucide-react'
+import { ArrowRight, Check, Gauge, GitBranch, Layers, ScanSearch, ShieldCheck, Terminal } from 'lucide-react'
 import { motion, useScroll, useTransform } from 'motion/react'
 import { type FormEvent, useRef, useState } from 'react'
 
@@ -7,9 +7,9 @@ import { Input } from '@/components/Field'
 import { Badge } from '@/components/LabelChip'
 import { Logo } from '@/components/Logo'
 import { SectionHead } from '@/components/Section'
-import { SegmentedControl } from '@/components/SegmentedControl'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import {
+  BRAND,
   CHANGELOG,
   CHANGELOG_HEAD,
   CTA,
@@ -33,11 +33,19 @@ export function SiteNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
       <div className={cn('flex h-16 items-center justify-between', GUTTER)}>
-        <Link to="/" aria-label="Triage home" className="-ml-1 px-1 py-2">
+        <Link to="/" aria-label={`${BRAND.name} home`} className="-ml-1 px-1 py-2">
           <Logo />
         </Link>
         <nav className="flex items-center gap-1 sm:gap-3">
           <ThemeToggle />
+          <a
+            href={BRAND.repo}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hidden h-10 items-center px-3 text-[15px] text-muted transition-colors hover:text-fg sm:inline-flex"
+          >
+            {NAV.github}
+          </a>
           <Link to="/app" className="hidden h-10 items-center px-3 text-[15px] text-muted transition-colors hover:text-fg sm:inline-flex">
             {NAV.login}
           </Link>
@@ -99,7 +107,7 @@ function Hero() {
   )
 }
 
-const ICONS = { keyboard: Keyboard, layers: Layers, kanban: Kanban, repeat: Repeat, chart: ChartColumn, bell: Bell }
+const ICONS = { gauge: Gauge, git: GitBranch, scan: ScanSearch, shield: ShieldCheck, layers: Layers, terminal: Terminal }
 
 function Reveal({ children, className, delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
   return (
@@ -221,68 +229,42 @@ function Changelog() {
 }
 
 function Pricing() {
-  const [period, setPeriod] = useState<'monthly' | 'annual'>('annual')
   return (
     <section id="pricing" className={cn('scroll-mt-16 border-t border-line py-24', GUTTER)}>
       <Reveal>
-        <SectionHead eyebrow={PRICING_HEAD.eyebrow} title={PRICING_HEAD.title}>
-          <div className="flex items-center gap-3">
-            <SegmentedControl
-              label="Billing period"
-              size="md"
-              value={period}
-              onChange={setPeriod}
-              options={[
-                { value: 'monthly', label: PRICING_HEAD.monthly },
-                { value: 'annual', label: PRICING_HEAD.annual },
-              ]}
-            />
-            <Badge tone="accent">{PRICING_HEAD.save}</Badge>
-          </div>
-        </SectionHead>
+        <SectionHead eyebrow={PRICING_HEAD.eyebrow} title={PRICING_HEAD.title} />
       </Reveal>
-      <div className="mt-14 grid grid-cols-1 border-t border-l border-line md:grid-cols-3">
-        {PLANS.map((p, i) => {
-          const price = p.monthly === null ? null : period === 'annual' ? Math.round(p.monthly * 0.8) : p.monthly
-          return (
-            <Reveal key={p.name} delay={i * 0.06} className={cn('relative flex flex-col border-r border-b border-line p-8', p.featured && 'bg-surface')}>
-              {p.featured && <div className="hatch pointer-events-none absolute inset-x-0 top-0 h-24" aria-hidden />}
-              <div className="relative flex items-center justify-between">
-                <h3 className="text-[17px] font-medium">{p.name}</h3>
-                {p.featured && <Badge tone="solid">Popular</Badge>}
-              </div>
-              <div className="relative mt-6 flex h-14 items-end gap-1.5">
-                {price === null ? (
-                  <span className="text-[40px] leading-none font-semibold tracking-[-0.04em]">Custom</span>
-                ) : (
-                  <>
-                    <motion.span key={price} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="text-[48px] leading-none font-semibold tracking-[-0.05em]">
-                      ${price}
-                    </motion.span>
-                    <span className="pb-1 text-sm text-muted">/ member / mo</span>
-                  </>
-                )}
-              </div>
-              <p className="mt-4 text-[15px] text-muted">{p.blurb}</p>
-              <ul className="mt-8 flex flex-1 flex-col gap-3">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-center gap-3 text-[15px]">
-                    <Check className="size-4 text-muted" strokeWidth={1.8} aria-hidden />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <Button
-                variant={p.featured ? 'primary' : 'outline'}
-                className="mt-10 w-full"
-                iconRight={<ArrowRight className="size-4" />}
-                onClick={() => (p.monthly === null ? (window.location.href = 'mailto:sales@example.com') : navigate('/app'))}
-              >
-                {p.cta}
-              </Button>
-            </Reveal>
-          )
-        })}
+      <div className="mt-14 grid grid-cols-1 border-t border-l border-line md:max-w-2xl">
+        {PLANS.map((p, i) => (
+          <Reveal key={p.name} delay={i * 0.06} className={cn('relative flex flex-col border-r border-b border-line p-8', p.featured && 'bg-surface')}>
+            {p.featured && <div className="hatch pointer-events-none absolute inset-x-0 top-0 h-24" aria-hidden />}
+            <div className="relative flex items-center justify-between">
+              <h3 className="text-[17px] font-medium">{p.name}</h3>
+              {p.featured && <Badge tone="solid">Free forever</Badge>}
+            </div>
+            <div className="relative mt-6 flex h-14 items-end gap-1.5">
+              <span className="text-[48px] leading-none font-semibold tracking-[-0.05em]">{p.price === 0 ? 'Free' : `$${p.price}`}</span>
+              {p.priceSuffix && <span className="pb-1 text-sm text-muted">{p.priceSuffix}</span>}
+            </div>
+            <p className="mt-4 text-[15px] text-muted">{p.blurb}</p>
+            <ul className="mt-8 flex flex-1 flex-col gap-3">
+              {p.features.map((f) => (
+                <li key={f} className="flex items-center gap-3 text-[15px]">
+                  <Check className="size-4 text-muted" strokeWidth={1.8} aria-hidden />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Button
+              variant={p.featured ? 'primary' : 'outline'}
+              className="mt-10 w-full"
+              iconRight={<ArrowRight className="size-4" />}
+              onClick={() => window.open(p.href, '_blank', 'noopener,noreferrer')}
+            >
+              {p.cta}
+            </Button>
+          </Reveal>
+        ))}
       </div>
     </section>
   )

@@ -1,21 +1,27 @@
-# Triage
+# M3TAL Review
 
-A near-black, square-cornered bug tracker: a landing page (hero with a
-wireframe stack of hatched slabs, a live product shot, features, changelog,
-pricing) and a working tracker at `/app`. Issues are grouped by status, with
-filters, search, keyboard navigation, a board you can drag between, a ⌘K
-command palette, an inbox, insights and settings. Light theme included.
+The site and demo tracker for **M3TAL Review** — AI-less code review that never
+guesses: a landing page (hero with a wireframe stack of hatched slabs, a live
+product shot, features, changelog, pricing) and a working tracker at `/app`.
 
-Data lives in the browser (`localStorage`), so there is no sign-in or
-database yet. The store is one module, built to be swapped for D1 later (see
-"Move to D1" below).
+Findings are keyed the way the CLI keys them, `REV-GO-142`: `REV`, then the
+language of the code under review, then the number. The language is stored on
+the issue (`Issue.lang`), so editing labels never changes a key, and the
+new-issue form has a picker for it. Issues are grouped by status, with filters,
+search, keyboard navigation, a board you can drag between, a ⌘K command palette,
+an inbox, insights and settings. Light theme included. There is one plan, free,
+and it links to the repository.
+
+Data lives in the browser (`localStorage`), so there is no sign-in or database
+yet. The store is one module, built to be swapped for D1 later (see "Move to
+D1" below).
 
 ## Run it
 
 ```sh
 bun install
 bun run dev        # http://localhost:5189 (Vite + the Worker in workerd)
-bun run build      # dist/client (assets) + dist/bug_tracker/index.js (Worker)
+bun run build      # dist/client (assets) + dist/m3tal_review/index.js (Worker)
 bun run typecheck
 ```
 
@@ -31,18 +37,25 @@ opens the command palette. In pickers, type to filter, arrows to move,
 
 ## Edit it
 
-- `src/data.ts` holds every string (hero, features, changelog, pricing,
-  footer), the status and priority vocabulary, label colours, and the demo
-  workspace (members, labels, 30 issues, cycles, inbox). Start there.
+- `src/data.ts` holds every string the site and app show — `BRAND` (name,
+  key prefix, workspace, tagline, repo URL), hero, features, changelog,
+  pricing, footer — plus the status, priority and language vocabulary
+  (`LANGS`, which types `Issue.lang` and labels the key picker), label
+  colours, and the demo workspace (members, labels, 30 issues, cycles,
+  inbox). Start there.
 - `src/app/store.ts` is the data layer: state shape, every action
   (`createIssue`, `patchIssue`, `addComment`, labels, members…), filtering and
-  sorting. Saved to `localStorage` key `triage:v1`; view preferences under
-  `triage:prefs`; theme under `triage:theme`.
+  sorting, and the `REV-<lang>-<n>` key format. Everything persists to
+  `localStorage`, in three keys that share the `m3tal-review:` prefix: `:v1`
+  (the workspace), `:prefs` (grouping, collapsed sections, closed issues, in
+  `TrackerApp.tsx`) and `:theme` (in `src/lib/theme.ts`, and also read by the
+  inline script in `index.html` that applies the theme before first paint, so
+  change the two together).
 - `src/app/*` are the screens: `TrackerApp` (shell, routing, shortcuts),
   `Sidebar`, `IssuesView` (list/board host, toolbar, j/k), `IssueList`,
   `Board`, `DetailPane`, `IssueModal`, `CommandPalette`, `Inbox`, `Insights`,
-  `Settings`; `props.tsx` has the status / priority / assignee / labels /
-  cycle / due pickers shared by all of them.
+  `Settings`; `props.tsx` has the status / priority / language / assignee /
+  labels / cycle / due pickers shared by all of them.
 - `src/sections/*` are the site: `Landing` (nav, hero, features, changelog,
   pricing, CTA, footer), `IsoStack` (the hero's 3D wireframe), `ProductMock`
   (the interactive skeleton product shot), `NotFound`.
@@ -52,6 +65,8 @@ opens the command palette. In pickers, type to filter, arrows to move,
 - There are no photos. Avatars are generated SVG (`Avatar.tsx`); to use real
   pictures, add a `photo` field to `Member` in `src/data.ts` and render an
   `<img>` in `Avatar` when it is set.
+- The board's drag payload uses the MIME type
+  `application/x-m3tal-review-issue`, read back on drop in `Board.tsx`.
 
 ### Move to D1
 

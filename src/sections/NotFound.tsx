@@ -12,7 +12,7 @@ export function NotFound({ inApp }: { inApp?: boolean }) {
     <div className="relative flex min-h-[70vh] flex-1 items-center overflow-hidden px-6 sm:px-12">
       <IsoStack className="absolute top-1/2 right-[-140px] h-[520px] w-[620px] -translate-y-1/2 opacity-60 max-md:opacity-25" />
       <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="relative max-w-lg">
-        <p className="font-mono text-sm text-muted">TRG-404 · Status: Not found</p>
+        <p className="font-mono text-sm text-muted">REV-404 · Status: Not found</p>
         <h1 className="mt-5 text-[48px] leading-[1.02] font-semibold tracking-[-0.045em] sm:text-[64px]">This page was closed as won’t fix.</h1>
         <p className="mt-5 text-[17px] leading-relaxed text-muted">
           <span className="font-mono text-fg/90">{window.location.pathname}</span> doesn’t exist. It may have moved, or the link has a typo.

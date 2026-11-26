@@ -168,10 +168,10 @@ function ToastDemo() {
   const toast = useToast()
   return (
     <>
-      <Button size="sm" onClick={() => toast({ title: 'TRG-142 moved to Done' })}>
+      <Button size="sm" onClick={() => toast({ title: 'REV-TS-142 moved to Done' })}>
         Show toast
       </Button>
-      <Button size="sm" onClick={() => toast({ title: 'TRG-139 deleted', action: { label: 'Undo', run: () => toast({ title: 'Restored' }) } })}>
+      <Button size="sm" onClick={() => toast({ title: 'REV-GO-139 deleted', action: { label: 'Undo', run: () => toast({ title: 'Restored' }) } })}>
         Toast with Undo
       </Button>
     </>
@@ -196,7 +196,7 @@ function ComponentSamples() {
         <Avatar member={SEED_MEMBERS[1]} size="sm" />
       </div>
       <div className="hatch flex h-10 items-center gap-3 border border-line px-3 font-mono text-[12px] text-muted">
-        <StatusIcon status="blocked" /> TRG-139 <Skeleton w={120} h={6} className="rounded-full" />
+        <StatusIcon status="blocked" /> REV-GO-139 <Skeleton w={120} h={6} className="rounded-full" />
       </div>
     </div>
   )
@@ -220,7 +220,7 @@ export function StyleGuide() {
       <div className="min-h-dvh bg-bg">
         <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
           <div className="flex h-16 items-center gap-4 px-4 sm:px-9">
-            <Link to="/" aria-label="Triage home" className="py-2">
+            <Link to="/" aria-label="M3TAL Review home" className="py-2">
               <Logo />
             </Link>
             <span className="hidden font-mono text-xs text-muted sm:inline">/ style guide</span>
@@ -248,7 +248,7 @@ export function StyleGuide() {
             <div className="py-14">
               <SectionHead
                 eyebrow="Design system"
-                title="Triage style guide"
+                title="M3TAL Review style guide"
                 body="Near-black, square-cornered, hairline borders. Tokens live in src/styles.css; components in src/components/. Everything below is rendered by the components the app uses."
               />
             </div>
