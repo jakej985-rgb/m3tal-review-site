@@ -123,13 +123,19 @@ export const PRIORITIES = [
 export type PriorityId = (typeof PRIORITIES)[number]['id']
 
 // Language of the code under review, shown in the issue key: REV-GO-142.
+// Mirrors m3tal-review's supported languages, JS/TS as one entry as the tool
+// documents it. Ids stay short so a key still fits the list column.
 export const LANGS = [
   { id: 'GO', name: 'Go' },
   { id: 'TS', name: 'TypeScript' },
   { id: 'PY', name: 'Python' },
-  { id: 'RS', name: 'Rust' },
   { id: 'JAVA', name: 'Java' },
+  { id: 'KT', name: 'Kotlin' },
   { id: 'CPP', name: 'C++' },
+  { id: 'CS', name: 'C#' },
+  { id: 'RS', name: 'Rust' },
+  { id: 'SWIFT', name: 'Swift' },
+  { id: 'PHP', name: 'PHP' },
 ] as const
 export type Lang = (typeof LANGS)[number]['id']
 
