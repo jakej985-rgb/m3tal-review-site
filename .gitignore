@@ -6,3 +6,5 @@ dist
 !.dev.vars.example
 .DS_Store
 *.log
+# Preview screenshots captured while reviewing the running app
+artifacts
