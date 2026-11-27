@@ -45,8 +45,10 @@ const KEY = 'm3tal-review:v1'
 // replayed to the account instead of the account copy replacing it.
 const RESUME_KEY = 'm3tal-review:resume'
 // A copy whose merge could not be saved: kept out of the way of `:v1`, which is
-// what the replay and the signed-out demo read.
-const KEPT_KEY = 'm3tal-review:kept'
+// what the replay and the signed-out demo read. Filed by account, so signing in
+// as someone else on this browser neither shows nor restores it.
+const KEPT_PREFIX = 'm3tal-review:kept'
+const keptKey = (sub: string) => `${KEPT_PREFIX}:${sub}`
 
 function fresh(): State {
   const issues = seedIssues()
@@ -95,9 +97,10 @@ function persistLocal(next: State) {
 
 type Kept = { savedAt: number; state: State }
 
-function readKept(): Kept | null {
+/** The copy one account parked in this browser, or null. */
+function readKept(sub: string): Kept | null {
   try {
-    const raw = localStorage.getItem(KEPT_KEY)
+    const raw = localStorage.getItem(keptKey(sub))
     if (!raw) return null
     const parsed = JSON.parse(raw) as Kept
     return parsed && typeof parsed.savedAt === 'number' && parsed.state ? parsed : null
@@ -107,17 +110,31 @@ function readKept(): Kept | null {
 }
 
 // A copy the merge gave up on, waiting for the visitor to restore or discard it.
-let keptRecord: Kept | null = typeof window === 'undefined' ? null : readKept()
-let keptInfo: { savedAt: number } | null = keptRecord ? { savedAt: keptRecord.savedAt } : null
+// Whose it is decides whether this browser may touch it: a record is only read,
+// shown and cleared for the signed-in account it was parked under.
+let keptOwner: string | null = null
+let keptRecord: Kept | null = null
+let keptInfo: { savedAt: number } | null = null
 // A parked copy is on its way to the account: its record stays in storage until
 // that save lands, so a failed or interrupted restore can be tried again.
 let restoring = false
 
+/** Hold the parked copy for `sub`, and only that one. */
+function loadKept(sub: string | null) {
+  if (keptOwner === sub) return
+  keptOwner = sub
+  keptRecord = sub ? readKept(sub) : null
+  keptInfo = keptRecord ? { savedAt: keptRecord.savedAt } : null
+}
+
 function forgetKept() {
+  const owner = keptOwner
   keptRecord = null
   keptInfo = null
+  keptOwner = null
+  if (!owner) return
   try {
-    localStorage.removeItem(KEPT_KEY)
+    localStorage.removeItem(keptKey(owner))
   } catch {
     /* storage unavailable: the in-memory record is all there was */
   }
@@ -125,13 +142,17 @@ function forgetKept() {
 
 /**
   Park a copy the merge gave up on, so the visitor can put it back. It is not
-  replayed on its own: the account's copy already won.
+  replayed on its own: the account's copy already won. Only a save to an account
+  can lose a merge, so there is always a `sub` to file it under.
 */
 function keepDiscardedCopy(discarded: State) {
+  const owner = session?.sub
+  if (!owner) return
+  keptOwner = owner
   keptRecord = { savedAt: Date.now(), state: discarded }
   keptInfo = { savedAt: keptRecord.savedAt }
   try {
-    localStorage.setItem(KEPT_KEY, JSON.stringify(keptRecord))
+    localStorage.setItem(keptKey(owner), JSON.stringify(keptRecord))
   } catch {
     /* storage full or blocked: this tab still has it */
   }
@@ -269,6 +290,9 @@ export function bootstrapAuth(): Promise<void> {
       const body = res.ok ? ((await res.json()) as { user: SessionUser | null; available?: boolean }) : { user: null, available: false }
       session = body.user ?? null
       signInAvailable = body.available === true
+      // Only the copy this account parked: one left here by another account is
+      // neither shown nor restorable.
+      loadKept(session?.sub ?? null)
       if (session) {
         const saved = await fetch('/api/state', { headers: { accept: 'application/json' }, credentials: 'same-origin' })
         if (saved.ok) {
@@ -365,7 +389,7 @@ function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?:
     syncError = sameContent
       ? null
       : exhausted
-        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded. The edits that could not be saved are kept in this browser, under m3tal-review:kept — restore or discard them below.'
+        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded. The edits that could not be saved are kept in this browser for your account — restore or discard them below.'
         : (opts.message ?? CONFLICT)
   }
   // The server's copy is authoritative from here on, for the next merge and for

@@ -29,11 +29,13 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 let accountCopy: unknown = null
 const puts: PutBody[] = []
 const replies: (() => Response | Promise<Response>)[] = []
+// Whose session the next page load gets; the scope test signs in as someone else.
+let meSub = 'u1'
 
 ;(globalThis as any).fetch = async (input: unknown, init?: { method?: string; body?: unknown }) => {
   const url = String(input)
   const method = init?.method ?? 'GET'
-  if (url.endsWith('/api/me')) return json({ available: true, user: { sub: 'u1', name: 'Tess', email: null } })
+  if (url.endsWith('/api/me')) return json({ available: true, user: { sub: meSub, name: 'Tess', email: null } })
   if (url.endsWith('/api/state') && method === 'GET') return json({ state: accountCopy, updatedAt: 100 })
   if (url.endsWith('/api/state') && method === 'PUT') {
     puts.push(JSON.parse(String(init?.body)) as PutBody)
@@ -77,6 +79,9 @@ const elsewhere = (base: Workspace, title: string, updatedAt: number, number: nu
 })
 
 const titles = (state: Workspace) => state.issues.map((i) => i.title)
+// Parked copies are filed per account; this suite signs in as `u1`.
+const keptKey = (sub = 'u1') => `m3tal-review:kept:${sub}`
+const keptStored = () => memory.get(keptKey())
 
 test('a merged workspace is re-saved after a 409 instead of being dropped', async () => {
   const store = await import('../src/app/store')
@@ -128,6 +133,10 @@ test('a merged copy rejected a second time is merged again, not discarded', asyn
   expect(titles(finalPut.state)).toContain('Theirs again')
 })
 
+/** What another page load of the store gets: its own module state, same browser. */
+const freshStore = async (tag: string) =>
+  (await import(`../src/app/store?${tag}`)) as typeof import('../src/app/store')
+
 /** Drive a copy through every merge round into the cap, so the store parks it. */
 async function parkACopy(store: typeof import('../src/app/store'), tag: string, firstNumber: number) {
   const base = store.getState() as Workspace
@@ -154,7 +163,7 @@ test('a merge that hits the cap parks the copy instead of losing it', async () =
   await parkACopy(store, 'Cap', 9_010)
 
   // The copy that lost is parked in this browser, edits and all.
-  const kept = JSON.parse(memory.get('m3tal-review:kept') ?? 'null') as { state: Workspace } | null
+  const kept = JSON.parse(keptStored() ?? 'null') as { state: Workspace } | null
   expect(kept).not.toBeNull()
   expect(titles(kept!.state)).toContain('Cap A')
   expect(titles(kept!.state)).toContain('Cap B')
@@ -169,7 +178,7 @@ test('restoring the parked copy puts it back, saves it and clears the record', a
   store.restoreKeptCopy()
 
   // Still on disk: only the save that carries it can clear the record.
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
   expect(titles(store.getState() as Workspace)).toContain('Cap A')
   await waitFor(() => puts.length === before + 1)
   const sent = puts[before]
@@ -177,18 +186,18 @@ test('restoring the parked copy puts it back, saves it and clears the record', a
   expect(sent.baseUpdatedAt).toBe(1_500)
   expect(titles(sent.state)).toContain('Cap A')
   expect(titles(sent.state)).toContain('Cap B')
-  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
+  await waitFor(() => keptStored() === undefined)
 })
 
 test('discarding the parked copy clears the record and saves nothing', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Drop', 9_020)
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
   const before = puts.length
 
   store.discardKeptCopy()
 
-  expect(memory.get('m3tal-review:kept')).toBeUndefined()
+  expect(keptStored()).toBeUndefined()
   await new Promise((r) => setTimeout(r, 500))
   expect(puts.length).toBe(before)
 })
@@ -196,7 +205,7 @@ test('discarding the parked copy clears the record and saves nothing', async () 
 test('a restore whose save fails keeps the parked copy for another try', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Keep', 9_030)
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
 
   // The tab drops offline while the restore save is in flight.
   replies.push(() => {
@@ -208,11 +217,11 @@ test('a restore whose save fails keeps the parked copy for another try', async (
   await new Promise((r) => setTimeout(r, 200))
 
   // Nothing acknowledged those edits, so the record is still there to restore again.
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
   expect(titles(store.getState() as Workspace)).toContain('Keep A')
 
   store.restoreKeptCopy()
-  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
+  await waitFor(() => keptStored() === undefined)
   // Only the save that carried them clears the record.
   expect(titles(puts[puts.length - 1].state)).toContain('Keep B')
 })
@@ -220,7 +229,7 @@ test('a restore whose save fails keeps the parked copy for another try', async (
 test('a restore that hits a 409 is merged, and only its acknowledged save clears the record', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Junction', 9_050)
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
 
   // The account moves again between the restore and its save.
   const newest = store.getState() as Workspace
@@ -242,19 +251,50 @@ test('a restore that hits a 409 is merged, and only its acknowledged save clears
   expect(titles(puts[before + 1].state)).toContain('Junction B')
   expect(titles(puts[before + 1].state)).toContain('Raced')
   // Nothing has acknowledged the restore yet: the record is still there to try again.
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
 
   // The merge was acknowledged with the restored edits in it, so the record can go.
   releaseMerged(json({ ok: true, updatedAt: 9_700 }))
-  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
+  await waitFor(() => keptStored() === undefined)
   expect(titles(store.getState() as Workspace)).toContain('Junction A')
   expect(titles(store.getState() as Workspace)).toContain('Raced')
+})
+
+test('a parked copy belongs to the account that parked it', async () => {
+  const store = await import('../src/app/store')
+  // This account's merge hits the cap, so its copy is parked here.
+  await parkACopy(store, 'Scope', 9_070)
+  expect(keptStored()).toBeTruthy()
+  const before = puts.length
+
+  // Someone else signs in on the same browser. Their page load must not bring the
+  // other account's parked edits onto their screen, or into their save.
+  meSub = 'u2'
+  const other = await freshStore('scope-u2')
+  await other.bootstrapAuth()
+  expect(titles(other.getState() as Workspace)).not.toContain('Scope A')
+
+  other.restoreKeptCopy()
+  other.discardKeptCopy()
+  await new Promise((r) => setTimeout(r, 400))
+  // Nothing to offer, so nothing saved and nothing cleared.
+  expect(puts.length).toBe(before)
+  expect(keptStored()).toBeTruthy()
+
+  // Back on the account that parked them: the same stored record is offered, and
+  // restoring it still clears it once its save lands.
+  meSub = 'u1'
+  const mine = await freshStore('scope-u1')
+  await mine.bootstrapAuth()
+  mine.restoreKeptCopy()
+  await waitFor(() => titles(mine.getState() as Workspace).includes('Scope A'))
+  await waitFor(() => keptStored() === undefined)
 })
 
 test('a 401 on the restore save leaves the record in storage', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Expire', 9_040)
-  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(keptStored()).toBeTruthy()
 
   // The session ends under the restore save.
   replies.push(() => json({ error: 'unauthorized' }, 401))
@@ -265,7 +305,7 @@ test('a 401 on the restore save leaves the record in storage', async () => {
   await new Promise((r) => setTimeout(r, 500))
   expect(puts.length).toBe(before + 1)
 
-  const kept = JSON.parse(memory.get('m3tal-review:kept') ?? 'null') as { state: Workspace } | null
+  const kept = JSON.parse(keptStored() ?? 'null') as { state: Workspace } | null
   expect(kept).not.toBeNull()
   expect(titles(kept!.state)).toContain('Expire A')
   // The browser's own workspace and the resume record carry the same copy, which
