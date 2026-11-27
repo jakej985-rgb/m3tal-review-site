@@ -88,9 +88,15 @@ session gets 401, while a state-changing request from another origin gets 403.
 Saving is optimistic and single-flight: the client sends the `updatedAt` it
 last saw, the Worker applies the write only when that still matches (strictly
 increasing timestamps, so two saves in one millisecond still order), and a
-stale tab gets 409 with the newer copy, which it adopts. One save is in flight
-at a time; edits made meanwhile coalesce into the next, and `pagehide` writes
-only when something is still unsaved.
+stale tab gets 409 with the newer copy. That tab merges what it changed since
+the server last acknowledged a copy — an issue it added or edited wins, a
+deletion here sticks, everything else comes from the newer copy, and an issue
+number both sides handed out is renumbered here — then saves the result. One
+save is in flight at a time; edits made meanwhile coalesce into the next, and
+`pagehide` writes only when something is still unsaved. If a merged copy is
+rejected three times, the newest copy wins instead of looping, and the copy
+that lost is parked in `m3tal-review:kept` in this browser — which is what the
+sidebar row says when it happens.
 
 A save refused with 401 means the session ended: the client stops writing,
 keeps the workspace in this browser and asks for a sign-in. That copy is

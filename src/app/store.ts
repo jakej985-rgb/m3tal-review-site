@@ -44,6 +44,9 @@ const KEY = 'm3tal-review:v1'
 // Set when a save is refused for a dead session: on the next sign-in this copy is
 // replayed to the account instead of the account copy replacing it.
 const RESUME_KEY = 'm3tal-review:resume'
+// A copy whose merge could not be saved: kept out of the way of `:v1`, which is
+// what the replay and the signed-out demo read.
+const KEPT_KEY = 'm3tal-review:kept'
 
 function fresh(): State {
   const issues = seedIssues()
@@ -87,6 +90,18 @@ function persistLocal(next: State) {
     localStorage.setItem(KEY, JSON.stringify(next))
   } catch {
     /* quota or private mode: keep working in memory */
+  }
+}
+
+/**
+  Park a copy the merge gave up on. It is not replayed — the account's copy won —
+  so this only has to survive the tab, not compete with anything.
+*/
+function keepDiscardedCopy(discarded: State) {
+  try {
+    localStorage.setItem(KEPT_KEY, JSON.stringify({ savedAt: Date.now(), state: discarded }))
+  } catch {
+    /* storage full or blocked: the message still says what happened */
   }
 }
 
@@ -274,13 +289,16 @@ function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?:
     syncError = 'This workspace changed in another tab or on another device. Your edits were merged with its newer copy.'
   } else {
     const exhausted = changedHere
+    // The merged copy cannot be sent again, so park it before the newer copy takes
+    // the screen: otherwise the edits that lost exist only in memory.
+    if (exhausted) keepDiscardedCopy(state)
     state = incoming
     pendingSave = false
     mergeRounds = 0
     syncError = sameContent
       ? null
       : exhausted
-        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded and your last edit could not be saved.'
+        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded. The edits that could not be saved are kept in this browser’s storage, under m3tal-review:kept.'
         : (opts.message ?? CONFLICT)
   }
   // The server's copy is authoritative from here on, for the next merge and for

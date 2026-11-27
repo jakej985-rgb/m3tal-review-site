@@ -127,3 +127,38 @@ test('a merged copy rejected a second time is merged again, not discarded', asyn
   expect(titles(finalPut.state)).toContain('Mine D')
   expect(titles(finalPut.state)).toContain('Theirs again')
 })
+
+test('a merge that hits the cap parks the copy instead of losing it', async () => {
+  const store = await import('../src/app/store')
+  const base = store.getState() as Workspace
+  const start = puts.length
+
+  const releaseFirst = holdNextPut()
+  for (const [title, at, number] of [
+    ['Theirs one', 1_300, 9_011],
+    ['Theirs two', 1_400, 9_012],
+    ['Theirs three', 1_500, 9_013],
+  ] as const) {
+    replies.push(() => json({ conflict: true, ...elsewhere(base, title, at, number) }, 409))
+  }
+
+  store.createIssue(draft('Mine E'))
+  await waitFor(() => puts.length === start + 1)
+  store.createIssue(draft('Mine F'))
+  releaseFirst(json({ conflict: true, ...elsewhere(base, 'Theirs first', 1_250, 9_010) }, 409))
+
+  // Three merges run, then the cap: nothing further is sent, so a contended
+  // workspace cannot keep the tab saving forever.
+  await waitFor(() => puts.length === start + 4)
+  const settled = puts.length
+  await new Promise((r) => setTimeout(r, 600))
+  expect(puts.length).toBe(settled)
+
+  // The copy that lost is parked in this browser, edits and all.
+  const kept = JSON.parse(memory.get('m3tal-review:kept') ?? 'null') as { state: Workspace } | null
+  expect(kept).not.toBeNull()
+  expect(titles(kept!.state)).toContain('Mine E')
+  expect(titles(kept!.state)).toContain('Mine F')
+  // The account's newest copy is what the tab shows instead.
+  expect(titles(store.getState() as Workspace)).toContain('Theirs three')
+})
