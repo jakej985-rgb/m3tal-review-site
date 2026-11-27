@@ -39,10 +39,10 @@ export const FEATURES = [
 export const CHANGELOG_HEAD = {
   eyebrow: 'Changelog',
   title: 'Shipped recently',
-  subscribe: 'Try the changelog form. This demo does not save addresses or send email.',
+  subscribe: 'Demo form: it checks the address format but nothing is stored or sent.',
   placeholder: 'you@company.com',
-  button: 'Subscribe',
-  done: 'Demo complete. No subscription was saved.',
+  button: 'Try demo',
+  done: 'Demo only — no address was saved and no email will arrive.',
 }
 
 export const CHANGELOG = [

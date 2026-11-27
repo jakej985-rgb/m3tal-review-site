@@ -158,7 +158,13 @@ function Changelog() {
     setState('loading')
     try {
       const res = await fetch('/api/subscribe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
-      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      const body = (await res.json().catch(() => ({}))) as { error?: string; demo?: boolean }
+      // The endpoint answers 501 while there is no list behind it; that is the
+      // expected outcome here, not a failure to report as an error.
+      if (body.demo) {
+        setState('done')
+        return
+      }
       if (!res.ok) throw new Error(body.error ?? 'Something went wrong. Try again.')
       setState('done')
     } catch (err) {

@@ -13,15 +13,17 @@ app.use('/api/*', bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
-// Changelog subscription from the landing page. Wire this to your email
-// provider or a D1 table; it currently validates and acknowledges.
+// Changelog subscription from the landing page. There is no mailing list behind
+// it yet, so a valid address is rejected as not implemented rather than
+// acknowledged: nothing is stored and no email is sent. Wire this to an email
+// provider or a D1 table and drop the `demo` flag with it.
 app.post('/api/subscribe', async (c) => {
   const body = await c.req.json<{ email?: unknown }>().catch(() => null)
   const email = typeof body?.email === 'string' ? body.email.trim() : ''
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return c.json({ error: 'Enter a valid email address.' }, 400)
   }
-  return c.json({ ok: true, demo: true })
+  return c.json({ error: 'This demo does not collect addresses.', demo: true }, 501)
 })
 
 app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
