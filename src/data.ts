@@ -30,7 +30,7 @@ export const FEATURES_HEAD = {
 export const FEATURES = [
   { icon: 'gauge', title: 'Graded, not guessed', body: 'A deterministic 0–100 score and an A–F grade, from severity-weighted findings and confidence multipliers.' },
   { icon: 'git', title: 'Reviews what you are about to commit', body: 'Run on staged changes, the working tree, or a patch from stdin. Same input, same report, every time.' },
-  { icon: 'scan', title: 'Slop detector', body: 'Redundant booleans, empty blocks, deep nesting, unreachable code and oversized functions across ten languages.' },
+  { icon: 'scan', title: 'Slop detector', body: 'Redundant booleans, empty blocks, deep nesting, unreachable code and oversized functions across eleven languages.' },
   { icon: 'shield', title: 'Security and supply chain', body: 'Around 100 rules for injection, exposed secrets, crypto misuse, unpinned CI actions and IaC exposure.' },
   { icon: 'layers', title: 'Dual-tier analysis', body: 'An optional Go semantic tier builds a typed SSA model and runs six engines: flow, statemachine, typestate, concurrency, authproto and protocol.' },
   { icon: 'terminal', title: 'Fits your workflow', body: 'Git hooks, CI workflows, policy files and durable audit logging. Optional gitleaks, gosec and osv-scanner passes.' },
@@ -47,7 +47,7 @@ export const CHANGELOG_HEAD = {
 
 export const CHANGELOG = [
   { version: '0.4', date: 'Nov 21, 2026', title: 'Go semantic tier', items: ['Whole-program typed SSA model via go/packages', 'Six engines: flow, statemachine, typestate, concurrency, authproto, protocol', 'Per-analyzer budgets and --semantic-timeout'] },
-  { version: '0.3', date: 'Nov 14, 2026', title: 'Grading and the slop detector', items: ['Deterministic 0–100 score and A–F grade', 'Severity-weighted findings with confidence multipliers', 'Slop checks for ten languages'] },
+  { version: '0.3', date: 'Nov 14, 2026', title: 'Grading and the slop detector', items: ['Deterministic 0–100 score and A–F grade', 'Severity-weighted findings with confidence multipliers', 'Slop checks for eleven languages'] },
   { version: '0.2', date: 'Nov 8, 2026', title: 'Security and supply-chain rules', items: ['~100 rules for injection, exposed secrets and crypto misuse', 'Unpinned CI actions and IaC exposures', 'Optional gitleaks, gosec and osv-scanner passes'] },
   { version: '0.1', date: 'Nov 2, 2026', title: 'First release', items: ['Review on staged changes, audit on the working tree', 'Patches from diff or stdin', 'Policy file and durable audit log'] },
 ] as const
@@ -123,11 +123,13 @@ export const PRIORITIES = [
 export type PriorityId = (typeof PRIORITIES)[number]['id']
 
 // Language of the code under review, shown in the issue key: REV-GO-142.
-// Mirrors m3tal-review's supported languages, JS/TS as one entry as the tool
-// documents it. Ids stay short so a key still fits the list column.
+// Mirrors m3tal-review's supported languages. The tool documents JS/TS as one
+// pair of scanners; they are listed apart here so a .js finding gets its own
+// key instead of borrowing a TypeScript one. Ids stay short to fit the column.
 export const LANGS = [
   { id: 'GO', name: 'Go' },
   { id: 'TS', name: 'TypeScript' },
+  { id: 'JS', name: 'JavaScript' },
   { id: 'PY', name: 'Python' },
   { id: 'JAVA', name: 'Java' },
   { id: 'KT', name: 'Kotlin' },
