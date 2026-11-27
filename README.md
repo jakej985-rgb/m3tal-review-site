@@ -12,9 +12,11 @@ search, keyboard navigation, a board you can drag between, a ⌘K command palett
 an inbox, insights and settings. Light theme included. There is one plan, free,
 and it links to the repository.
 
-Data lives in the browser (`localStorage`), so there is no sign-in or database
-yet. The store is one module, built to be swapped for D1 later (see "Move to
-D1" below).
+Signed out, the tracker is a browser-only demo in `localStorage`. Signed in
+with Freebuff, the workspace belongs to the account and is stored in D1 under
+the visitor's `sub`, so it follows them to another browser; saves are
+optimistic, one at a time, and a tab that has fallen behind adopts the newer
+copy instead of overwriting it (see "Storage and accounts").
 
 ## Run it
 
@@ -45,12 +47,17 @@ opens the command palette. In pickers, type to filter, arrows to move,
   inbox). Start there.
 - `src/app/store.ts` is the data layer: state shape, every action
   (`createIssue`, `patchIssue`, `addComment`, labels, members…), filtering and
-  sorting, and the `REV-<lang>-<n>` key format. Everything persists to
-  `localStorage`, in three keys that share the `m3tal-review:` prefix: `:v1`
+  sorting, and the `REV-<lang>-<n>` key format. Signed out it persists to
+  `localStorage` in three keys that share the `m3tal-review:` prefix: `:v1`
   (the workspace), `:prefs` (grouping, collapsed sections, closed issues, in
   `TrackerApp.tsx`) and `:theme` (in `src/lib/theme.ts`, and also read by the
   inline script in `index.html` that applies the theme before first paint, so
-  change the two together).
+  change the two together). Signed in, the same module loads and saves through
+  `/api/state` instead.
+- `src/components/AccountMenu.tsx` holds the account controls: the header's
+  Log in / Sign up links (both start Sign in with Freebuff, which creates
+  accounts and signs existing ones in) and the sidebar row that says whether
+  edits are saved to the account or only to this browser.
 - `src/app/*` are the screens: `TrackerApp` (shell, routing, shortcuts),
   `Sidebar`, `IssuesView` (list/board host, toolbar, j/k), `IssueList`,
   `Board`, `DetailPane`, `IssueModal`, `CommandPalette`, `Inbox`, `Insights`,
@@ -59,22 +66,39 @@ opens the command palette. In pickers, type to filter, arrows to move,
 - `src/sections/*` are the site: `Landing` (nav, hero, features, changelog,
   pricing, CTA, footer), `IsoStack` (the hero's 3D wireframe), `ProductMock`
   (the interactive skeleton product shot), `NotFound`.
-- `src/worker/index.ts` is the Worker: `/api/health`, `/api/subscribe`
-  (changelog email, validates and acknowledges; returns 400 on a bad address)
-  and a JSON 404 for unknown `/api/*`.
+- `src/worker/index.ts` is the Worker: `/api/health`, `/api/me`
+  (`{ available, user }`), `/api/state` (the signed-in visitor's workspace,
+  `GET`/`PUT`), `/api/subscribe` (changelog email; validates, then returns 501
+  because no list is wired up) and a JSON 404 for unknown `/api/*`. The handler
+  is wrapped by `@freebuff/auth`, which also serves
+  `/auth/freebuff/{signin,callback,signout,session}`.
 - There are no photos. Avatars are generated SVG (`Avatar.tsx`); to use real
   pictures, add a `photo` field to `Member` in `src/data.ts` and render an
   `<img>` in `Avatar` when it is set.
 - The board's drag payload uses the MIME type
   `application/x-m3tal-review-issue`, read back on drop in `Board.tsx`.
 
-### Move to D1
+### Storage and accounts
 
-Every mutation goes through one `update()` in `store.ts`, and state is plain
-JSON. To persist on the server: add a `DB` binding in `wrangler.jsonc`,
-create `issues`, `comments`, `labels`, `members` tables, add routes in
-`src/worker/index.ts`, then make each action call its route (keep the local
-update for optimistic UI) and replace `load()` with a fetch.
+`workspaces(user_id PRIMARY KEY, state TEXT, updated_at INTEGER)` holds one
+JSON workspace per account, keyed by the Freebuff `sub` — never an ID from the
+request body. The table is created on first use, and a request without a
+session gets 401, while a state-changing request from another origin gets 403.
+
+Saving is optimistic and single-flight: the client sends the `updatedAt` it
+last saw, the Worker applies the write only when that still matches (strictly
+increasing timestamps, so two saves in one millisecond still order), and a
+stale tab gets 409 with the newer copy, which it adopts. One save is in flight
+at a time; edits made meanwhile coalesce into the next, and `pagehide` writes
+only when something is still unsaved.
+
+For a normalised schema (per-issue rows, comments as their own table), replace
+the JSON row with tables and turn each action in `store.ts` into its route,
+keeping the local update for the optimistic UI and moving the `updatedAt`
+check to the row you mutate. To use email/password or another provider instead,
+swap `@freebuff/auth` for it and keep the same `user.sub`-scoped queries; add
+the production client with `sites_enable_auth` for the deployed origin, and a
+development one for `localhost`.
 
 ## Design system
 

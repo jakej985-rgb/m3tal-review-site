@@ -2,8 +2,9 @@ import { ArrowRight, Check, Gauge, GitBranch, Layers, ScanSearch, ShieldCheck, T
 import { motion, useScroll, useTransform } from 'motion/react'
 import { type FormEvent, useRef, useState } from 'react'
 
-import { Button, ButtonLink } from '@/components/Button'
+import { Button } from '@/components/Button'
 import { Input } from '@/components/Field'
+import { HeaderAccount } from '@/components/AccountMenu'
 import { Badge } from '@/components/LabelChip'
 import { Logo } from '@/components/Logo'
 import { SectionHead } from '@/components/Section'
@@ -46,12 +47,7 @@ export function SiteNav() {
           >
             {NAV.github}
           </a>
-          <Link to="/app" className="hidden h-10 items-center px-3 text-[15px] text-muted transition-colors hover:text-fg sm:inline-flex">
-            {NAV.login}
-          </Link>
-          <ButtonLink to="/app" variant="outline" className="h-10 px-[18px] text-[15px]">
-            {NAV.signup}
-          </ButtonLink>
+          <HeaderAccount />
         </nav>
       </div>
     </header>

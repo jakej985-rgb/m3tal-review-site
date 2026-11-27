@@ -21,10 +21,10 @@ import {
 } from '@/data'
 
 /*
-  The data layer. One state object, persisted to localStorage under
-  `m3tal-review:v1`. Every mutation goes through `update`, which saves and notifies.
-  To move to D1, replace `load` with a fetch and make each action below call
-  an API route in src/worker/index.ts (the shapes are already serialisable).
+  The data layer. One state object. Signed out it is the browser-only demo in
+  localStorage under `m3tal-review:v1`; signed in it is the account's workspace
+  in D1, read from and written to /api/state. Every mutation goes through
+  `update`, which persists (local or remote) and notifies.
 */
 
 export type State = {
@@ -74,10 +74,14 @@ const listeners = new Set<() => void>()
 
 function update(fn: (s: State) => State) {
   state = fn(state)
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state))
-  } catch {
-    /* quota or private mode: keep working in memory */
+  if (remote) {
+    scheduleSync()
+  } else {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state))
+    } catch {
+      /* quota or private mode: keep working in memory */
+    }
   }
   listeners.forEach((l) => l())
 }
@@ -85,9 +89,168 @@ function update(fn: (s: State) => State) {
 if (typeof window !== 'undefined') {
   // Another tab changed the data: pick it up.
   window.addEventListener('storage', (e) => {
-    if (e.key !== KEY) return
+    if (remote || e.key !== KEY) return
     state = load()
     listeners.forEach((l) => l())
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Accounts and remote persistence                                     */
+/* ------------------------------------------------------------------ */
+
+export type SessionUser = { sub: string; name: string | null; email: string | null; picture: string | null }
+
+type AuthState = { user: SessionUser | null; ready: boolean; remote: boolean; error: string | null; available: boolean }
+
+let session: SessionUser | null = null
+let authReady = false
+let remote = false
+let signInAvailable = false
+let syncError: string | null = null
+let authSnapshot: AuthState = { user: null, ready: false, remote: false, error: null, available: false }
+let bootstrapped: Promise<void> | null = null
+let syncTimer: ReturnType<typeof setTimeout> | undefined
+// The `updatedAt` this tab last saw: saves are rejected if the row moved on.
+let remoteUpdatedAt: number | null = null
+let pendingSave = false
+let saveInFlight = false
+
+function refreshAuth() {
+  authSnapshot = { user: session, ready: authReady, remote, error: syncError, available: signInAvailable }
+  listeners.forEach((l) => l())
+}
+
+/** The signed-in visitor, whether their workspace is the remote one, and sync trouble. */
+export function useAuth(): AuthState {
+  return useSyncExternalStore(
+    (fn) => {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
+    () => authSnapshot,
+    () => authSnapshot,
+  )
+}
+
+/** Reads the session and, when signed in, replaces the local demo with the account's workspace. */
+export function bootstrapAuth(): Promise<void> {
+  bootstrapped ??= (async () => {
+    try {
+      const res = await fetch('/api/me', { headers: { accept: 'application/json' }, credentials: 'same-origin' })
+      const body = res.ok ? ((await res.json()) as { user: SessionUser | null; available?: boolean }) : { user: null, available: false }
+      session = body.user ?? null
+      signInAvailable = body.available === true
+      remote = !!session
+      if (session) {
+        const saved = await fetch('/api/state', { headers: { accept: 'application/json' }, credentials: 'same-origin' })
+        if (saved.ok) {
+          const payload = (await saved.json()) as { state: State | null; updatedAt: number | null }
+          remoteUpdatedAt = payload.updatedAt ?? null
+          if (payload.state && Array.isArray(payload.state.issues) && payload.state.version === 1) {
+            state = payload.state
+          } else {
+            // First visit on this account: seed the demo workspace into it.
+            state = fresh()
+            pendingSave = true
+            void flushSave()
+          }
+        } else if (saved.status === 401) {
+          session = null
+          remote = false
+        } else {
+          syncError = 'Could not load the workspace saved to your account.'
+        }
+      }
+    } catch {
+      session = null
+      remote = false
+    } finally {
+      authReady = true
+      refreshAuth()
+    }
+  })()
+  return bootstrapped
+}
+
+function scheduleSync(delay = 500) {
+  if (!remote) return
+  pendingSave = true
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => void flushSave(), delay)
+}
+
+/** Take the server's newer copy after a rejected save. */
+function adoptServerCopy(next: unknown, updatedAt: number | null) {
+  const same = JSON.stringify(next) === JSON.stringify(state)
+  state = next && typeof next === 'object' && validState(next) ? next : fresh()
+  remoteUpdatedAt = updatedAt
+  pendingSave = false
+  // A conflict over identical content is usually this tab's own pagehide write
+  // landing late, so only say something when the copies really differ.
+  syncError = same ? null : 'This workspace changed in another tab or on another device, so its newer copy was loaded here.'
+  refreshAuth()
+}
+
+function validState(value: unknown): value is State {
+  const s = value as State
+  return !!s && s.version === 1 && Array.isArray(s.issues)
+}
+
+/**
+  One save at a time. Edits made while a save is in flight are coalesced into
+  the next one, so two writes cannot be in flight out of order.
+*/
+async function flushSave() {
+  if (!remote || saveInFlight || !pendingSave) return
+  syncTimer = undefined
+  pendingSave = false
+  saveInFlight = true
+  try {
+    const res = await fetch('/api/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ state, baseUpdatedAt: remoteUpdatedAt }),
+    })
+    if (res.status === 409) {
+      const payload = (await res.json().catch(() => null)) as { state?: unknown; updatedAt?: number | null } | null
+      adoptServerCopy(payload?.state ?? null, payload?.updatedAt ?? null)
+      return
+    }
+    if (!res.ok) throw new Error(String(res.status))
+    const payload = (await res.json().catch(() => null)) as { updatedAt?: number } | null
+    if (typeof payload?.updatedAt === 'number') remoteUpdatedAt = payload.updatedAt
+    if (syncError) {
+      syncError = null
+      refreshAuth()
+    }
+  } catch {
+    // Not lost: the dirty flag stays set and the next edit retries.
+    pendingSave = true
+    syncError = 'Your last change is not saved to your account yet. It retries on the next edit.'
+    refreshAuth()
+  } finally {
+    saveInFlight = false
+    if (pendingSave && remote) {
+      if (syncTimer) clearTimeout(syncTimer)
+      syncTimer = setTimeout(() => void flushSave(), 400)
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  // Leaving the page: only if something is unsaved, so no duplicate write.
+  window.addEventListener('pagehide', () => {
+    if (!remote || !pendingSave) return
+    if (syncTimer) clearTimeout(syncTimer)
+    void fetch('/api/state', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      keepalive: true,
+      body: JSON.stringify({ state, baseUpdatedAt: remoteUpdatedAt }),
+    })
   })
 }
 

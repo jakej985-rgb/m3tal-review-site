@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react'
 
+import { bootstrapAuth } from './app/store'
 import { BRAND } from './data'
 import { useLocation } from './lib/router'
 import { Landing } from './sections/Landing'
@@ -10,6 +11,12 @@ const StyleGuide = lazy(() => import('./styleguide/StyleGuide').then((m) => ({ d
 
 export function App() {
   const { pathname } = useLocation()
+
+  // One session read per page load: it decides whether the tracker shows the
+  // browser-only demo or the workspace saved to the visitor's account.
+  useEffect(() => {
+    void bootstrapAuth()
+  }, [])
 
   // Warm the app chunk once the landing page is idle, so "Get started" is instant.
   useEffect(() => {

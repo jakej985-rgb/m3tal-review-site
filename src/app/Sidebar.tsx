@@ -1,7 +1,7 @@
 import { ChartColumn, CircleUser, Inbox, Kanban, LayoutList, Plus, Repeat, Search, Settings } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { Avatar } from '@/components/Avatar'
+import { SidebarAccount } from '@/components/AccountMenu'
 import { Kbd } from '@/components/Kbd'
 import { LogoMark } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -34,7 +34,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { pathname, search } = useLocation()
   const ui = useUI()
   const workspace = useStore((s) => s.workspace)
-  const me = useStore((s) => s.members.find((m) => m.id === s.meId))
   const unread = useStore((s) => s.notices.filter((n) => !n.read).length)
   const mineOpen = useStore((s) => s.issues.filter((i) => i.assigneeId === s.meId && !CLOSED.includes(i.status)).length)
   const cycles = useStore((s) => s.cycles)
@@ -132,9 +131,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <NavItem to="/app/settings" icon={<Settings className={icon} />} active={pathname === '/app/settings'} onNavigate={onNavigate}>
           Settings
         </NavItem>
-        <div className="mt-2 flex items-center gap-2.5 px-2.5 py-1.5">
-          <Avatar member={me} size="sm" />
-          <span className="flex-1 truncate text-[13px] text-muted">{me?.name}</span>
+        <SidebarAccount />
+        <div className="mt-1 flex justify-end px-2.5">
           <Link to="/" className="inline-flex min-h-8 items-center text-xs text-muted hover:text-fg" onClick={onNavigate}>
             Site
           </Link>
