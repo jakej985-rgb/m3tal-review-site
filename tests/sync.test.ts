@@ -216,3 +216,26 @@ test('a restore whose save fails keeps the parked copy for another try', async (
   // Only the save that carried them clears the record.
   expect(titles(puts[puts.length - 1].state)).toContain('Keep B')
 })
+
+test('a 401 on the restore save leaves the record in storage', async () => {
+  const store = await import('../src/app/store')
+  await parkACopy(store, 'Expire', 9_040)
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+
+  // The session ends under the restore save.
+  replies.push(() => json({ error: 'unauthorized' }, 401))
+  const before = puts.length
+  store.restoreKeptCopy()
+  await waitFor(() => puts.length === before + 1)
+  // Signing out stops the writer, so there is no retry to clear it either.
+  await new Promise((r) => setTimeout(r, 500))
+  expect(puts.length).toBe(before + 1)
+
+  const kept = JSON.parse(memory.get('m3tal-review:kept') ?? 'null') as { state: Workspace } | null
+  expect(kept).not.toBeNull()
+  expect(titles(kept!.state)).toContain('Expire A')
+  // The browser's own workspace and the resume record carry the same copy, which
+  // is what the next sign-in replays.
+  expect(titles(JSON.parse(memory.get('m3tal-review:v1') ?? 'null') as Workspace)).toContain('Expire B')
+  expect(memory.get('m3tal-review:resume')).toBeTruthy()
+})

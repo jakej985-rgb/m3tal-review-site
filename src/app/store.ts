@@ -109,9 +109,9 @@ function readKept(): Kept | null {
 // A copy the merge gave up on, waiting for the visitor to restore or discard it.
 let keptRecord: Kept | null = typeof window === 'undefined' ? null : readKept()
 let keptInfo: { savedAt: number } | null = keptRecord ? { savedAt: keptRecord.savedAt } : null
-// The parked copy a save is currently carrying. Its record stays in storage until
+// A parked copy is on its way to the account: its record stays in storage until
 // that save lands, so a failed or interrupted restore can be tried again.
-let restoring: Kept | null = null
+let restoring = false
 
 function forgetKept() {
   keptRecord = null
@@ -237,16 +237,13 @@ export function useKeptCopy() {
 /** Put the parked edits back on screen, and save them over the account's copy. */
 export function restoreKeptCopy() {
   if (!keptRecord) return
-  const parked = keptRecord
-  state = parked.state
+  state = keptRecord.state
   syncError = null
   if (remote) {
     // Not forgotten yet: the record goes only once a save carrying these edits is
     // acknowledged, so a rejected or interrupted restore is still recoverable.
-    restoring = parked
+    restoring = true
     pendingSave = true
-    mergeRounds = 0
-    if (syncTimer) clearTimeout(syncTimer)
     void flushSave()
   } else {
     // Signed out: there is no save to wait for, and `:v1` already has the copy.
@@ -364,7 +361,7 @@ function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?:
     mergeRounds = 0
     // Whatever was being restored is on screen no more; the record stays so it can
     // be tried again, unless the cap just parked a newer copy over it.
-    restoring = null
+    restoring = false
     syncError = sameContent
       ? null
       : exhausted
@@ -451,12 +448,12 @@ async function flushSave() {
     synced = sent
     mergeRounds = 0
     // The restored copy is on the account, so the parked record has done its job.
-    const restoredCopy = restoring
-    if (restoredCopy) {
-      restoring = null
+    const restored = restoring
+    if (restored) {
+      restoring = false
       forgetKept()
     }
-    if (syncError || restoredCopy) {
+    if (syncError || restored) {
       syncError = null
       refreshAuth()
     }
