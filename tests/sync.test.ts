@@ -168,7 +168,8 @@ test('restoring the parked copy puts it back, saves it and clears the record', a
 
   store.restoreKeptCopy()
 
-  expect(memory.get('m3tal-review:kept')).toBeUndefined()
+  // Still on disk: only the save that carries it can clear the record.
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
   expect(titles(store.getState() as Workspace)).toContain('Cap A')
   await waitFor(() => puts.length === before + 1)
   const sent = puts[before]
@@ -176,6 +177,7 @@ test('restoring the parked copy puts it back, saves it and clears the record', a
   expect(sent.baseUpdatedAt).toBe(1_500)
   expect(titles(sent.state)).toContain('Cap A')
   expect(titles(sent.state)).toContain('Cap B')
+  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
 })
 
 test('discarding the parked copy clears the record and saves nothing', async () => {
@@ -189,4 +191,28 @@ test('discarding the parked copy clears the record and saves nothing', async () 
   expect(memory.get('m3tal-review:kept')).toBeUndefined()
   await new Promise((r) => setTimeout(r, 500))
   expect(puts.length).toBe(before)
+})
+
+test('a restore whose save fails keeps the parked copy for another try', async () => {
+  const store = await import('../src/app/store')
+  await parkACopy(store, 'Keep', 9_030)
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+
+  // The tab drops offline while the restore save is in flight.
+  replies.push(() => {
+    throw new Error('offline')
+  })
+  const before = puts.length
+  store.restoreKeptCopy()
+  await waitFor(() => puts.length === before + 1)
+  await new Promise((r) => setTimeout(r, 200))
+
+  // Nothing acknowledged those edits, so the record is still there to restore again.
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  expect(titles(store.getState() as Workspace)).toContain('Keep A')
+
+  store.restoreKeptCopy()
+  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
+  // Only the save that carried them clears the record.
+  expect(titles(puts[puts.length - 1].state)).toContain('Keep B')
 })

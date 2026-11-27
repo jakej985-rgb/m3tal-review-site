@@ -97,7 +97,9 @@ save is in flight at a time; edits made meanwhile coalesce into the next, and
 rejected three times, the newest copy wins instead of looping, and the copy
 that lost is parked in `m3tal-review:kept` in this browser. The sidebar row
 says so and offers **Restore** (put those edits back and save them over the
-account's copy) and **Discard** (forget them); either clears the record.
+account's copy) and **Discard** (forget them). A restore keeps the record until
+its save is acknowledged, so a failed or interrupted one can be tried again;
+discarding clears it straight away.
 
 A save refused with 401 means the session ended: the client stops writing,
 keeps the workspace in this browser and asks for a sign-in. That copy is
