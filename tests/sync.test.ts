@@ -128,37 +128,65 @@ test('a merged copy rejected a second time is merged again, not discarded', asyn
   expect(titles(finalPut.state)).toContain('Theirs again')
 })
 
-test('a merge that hits the cap parks the copy instead of losing it', async () => {
-  const store = await import('../src/app/store')
+/** Drive a copy through every merge round into the cap, so the store parks it. */
+async function parkACopy(store: typeof import('../src/app/store'), tag: string, firstNumber: number) {
   const base = store.getState() as Workspace
   const start = puts.length
-
   const releaseFirst = holdNextPut()
-  for (const [title, at, number] of [
-    ['Theirs one', 1_300, 9_011],
-    ['Theirs two', 1_400, 9_012],
-    ['Theirs three', 1_500, 9_013],
-  ] as const) {
-    replies.push(() => json({ conflict: true, ...elsewhere(base, title, at, number) }, 409))
+  for (const [i, at] of [1_300, 1_400, 1_500].entries()) {
+    replies.push(() => json({ conflict: true, ...elsewhere(base, `${tag} ${i + 2}`, at, firstNumber + i + 1) }, 409))
   }
 
-  store.createIssue(draft('Mine E'))
+  store.createIssue(draft(`${tag} A`))
   await waitFor(() => puts.length === start + 1)
-  store.createIssue(draft('Mine F'))
-  releaseFirst(json({ conflict: true, ...elsewhere(base, 'Theirs first', 1_250, 9_010) }, 409))
+  store.createIssue(draft(`${tag} B`))
+  releaseFirst(json({ conflict: true, ...elsewhere(base, `${tag} 1`, 1_250, firstNumber) }, 409))
 
-  // Three merges run, then the cap: nothing further is sent, so a contended
-  // workspace cannot keep the tab saving forever.
   await waitFor(() => puts.length === start + 4)
   const settled = puts.length
   await new Promise((r) => setTimeout(r, 600))
+  // The cap stops the loop: nothing further is sent.
   expect(puts.length).toBe(settled)
+}
+
+test('a merge that hits the cap parks the copy instead of losing it', async () => {
+  const store = await import('../src/app/store')
+  await parkACopy(store, 'Cap', 9_010)
 
   // The copy that lost is parked in this browser, edits and all.
   const kept = JSON.parse(memory.get('m3tal-review:kept') ?? 'null') as { state: Workspace } | null
   expect(kept).not.toBeNull()
-  expect(titles(kept!.state)).toContain('Mine E')
-  expect(titles(kept!.state)).toContain('Mine F')
+  expect(titles(kept!.state)).toContain('Cap A')
+  expect(titles(kept!.state)).toContain('Cap B')
   // The account's newest copy is what the tab shows instead.
-  expect(titles(store.getState() as Workspace)).toContain('Theirs three')
+  expect(titles(store.getState() as Workspace)).toContain('Cap 4')
+})
+
+test('restoring the parked copy puts it back, saves it and clears the record', async () => {
+  const store = await import('../src/app/store')
+  const before = puts.length
+
+  store.restoreKeptCopy()
+
+  expect(memory.get('m3tal-review:kept')).toBeUndefined()
+  expect(titles(store.getState() as Workspace)).toContain('Cap A')
+  await waitFor(() => puts.length === before + 1)
+  const sent = puts[before]
+  // Saved on top of the copy that beat it, which is the point of restoring.
+  expect(sent.baseUpdatedAt).toBe(1_500)
+  expect(titles(sent.state)).toContain('Cap A')
+  expect(titles(sent.state)).toContain('Cap B')
+})
+
+test('discarding the parked copy clears the record and saves nothing', async () => {
+  const store = await import('../src/app/store')
+  await parkACopy(store, 'Drop', 9_020)
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+  const before = puts.length
+
+  store.discardKeptCopy()
+
+  expect(memory.get('m3tal-review:kept')).toBeUndefined()
+  await new Promise((r) => setTimeout(r, 500))
+  expect(puts.length).toBe(before)
 })

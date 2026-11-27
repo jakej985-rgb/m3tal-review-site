@@ -1,9 +1,10 @@
 import { SignInWithFreebuff, SignOutButton } from '@freebuff/auth/react'
 
 import { Avatar } from '@/components/Avatar'
-import { buttonClass } from '@/components/Button'
+import { Button, buttonClass } from '@/components/Button'
 import { NAV } from '@/data'
-import { useAuth, useStore } from '@/app/store'
+import { ago } from '@/lib/dates'
+import { discardKeptCopy, restoreKeptCopy, useAuth, useKeptCopy, useStore } from '@/app/store'
 
 /*
   Account controls. Signed out, the header's "Log in" and "Sign up" both start
@@ -44,6 +45,7 @@ export function HeaderAccount() {
 /** The tracker's account row: who you are, and whether edits leave this browser. */
 export function SidebarAccount() {
   const { user, ready, error, available, expired } = useAuth()
+  const kept = useKeptCopy()
   const me = useStore((s) => s.members.find((m) => m.id === s.meId))
   // Signed in, the avatar is the account's, not the demo persona's.
   const avatar = user
@@ -80,6 +82,19 @@ export function SidebarAccount() {
         <p role="status" className="mt-1.5 text-[11px] leading-snug text-danger">
           {error}
         </p>
+      )}
+      {kept && (
+        <div className="mt-2 border border-line-strong/70 bg-surface-2/50 px-2 py-1.5">
+          <p className="text-[11px] leading-snug text-muted">Edits kept {ago(kept.savedAt)}, when a save could not be applied.</p>
+          <div className="mt-1.5 flex items-center gap-1">
+            <Button size="sm" variant="outline" onClick={restoreKeptCopy} className="h-7 px-2 text-[12px]">
+              Restore
+            </Button>
+            <Button size="sm" variant="ghost" onClick={discardKeptCopy} className="h-7 px-2 text-[12px]">
+              Discard
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )

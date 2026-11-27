@@ -93,15 +93,44 @@ function persistLocal(next: State) {
   }
 }
 
+type Kept = { savedAt: number; state: State }
+
+function readKept(): Kept | null {
+  try {
+    const raw = localStorage.getItem(KEPT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Kept
+    return parsed && typeof parsed.savedAt === 'number' && parsed.state ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+// A copy the merge gave up on, waiting for the visitor to restore or discard it.
+let keptRecord: Kept | null = typeof window === 'undefined' ? null : readKept()
+let keptInfo: { savedAt: number } | null = keptRecord ? { savedAt: keptRecord.savedAt } : null
+
+function forgetKept() {
+  keptRecord = null
+  keptInfo = null
+  try {
+    localStorage.removeItem(KEPT_KEY)
+  } catch {
+    /* storage unavailable: the in-memory record is all there was */
+  }
+}
+
 /**
-  Park a copy the merge gave up on. It is not replayed — the account's copy won —
-  so this only has to survive the tab, not compete with anything.
+  Park a copy the merge gave up on, so the visitor can put it back. It is not
+  replayed on its own: the account's copy already won.
 */
 function keepDiscardedCopy(discarded: State) {
+  keptRecord = { savedAt: Date.now(), state: discarded }
+  keptInfo = { savedAt: keptRecord.savedAt }
   try {
-    localStorage.setItem(KEPT_KEY, JSON.stringify({ savedAt: Date.now(), state: discarded }))
+    localStorage.setItem(KEPT_KEY, JSON.stringify(keptRecord))
   } catch {
-    /* storage full or blocked: the message still says what happened */
+    /* storage full or blocked: this tab still has it */
   }
 }
 
@@ -195,6 +224,37 @@ const subscribe = (fn: () => void) => {
 /** The signed-in visitor, and any trouble syncing their workspace. */
 export function useAuth(): AuthState {
   return useSyncExternalStore(subscribe, () => authSnapshot, () => authSnapshot)
+}
+
+/** A copy the merge gave up on, waiting for the visitor to decide what to do with it. */
+export function useKeptCopy() {
+  return useSyncExternalStore(subscribe, () => keptInfo, () => keptInfo)
+}
+
+/** Put the parked edits back on screen, and save them over the account's copy. */
+export function restoreKeptCopy() {
+  if (!keptRecord) return
+  const restored = keptRecord.state
+  forgetKept()
+  state = restored
+  syncError = null
+  if (remote) {
+    pendingSave = true
+    mergeRounds = 0
+    if (syncTimer) clearTimeout(syncTimer)
+    void flushSave()
+  } else {
+    persistLocal(state)
+  }
+  refreshAuth()
+}
+
+/** Leave the account's copy as it is and forget the parked edits. */
+export function discardKeptCopy() {
+  if (!keptRecord) return
+  forgetKept()
+  syncError = null
+  refreshAuth()
 }
 
 /** Reads the session and, when signed in, replaces the local demo with the account's workspace. */
@@ -298,7 +358,7 @@ function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?:
     syncError = sameContent
       ? null
       : exhausted
-        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded. The edits that could not be saved are kept in this browser’s storage, under m3tal-review:kept.'
+        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded. The edits that could not be saved are kept in this browser, under m3tal-review:kept — restore or discard them below.'
         : (opts.message ?? CONFLICT)
   }
   // The server's copy is authoritative from here on, for the next merge and for
