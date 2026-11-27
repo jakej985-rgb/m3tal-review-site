@@ -12,7 +12,7 @@ import { IssueModal } from './IssueModal'
 import { IssuesView } from './IssuesView'
 import { Settings } from './Settings'
 import { Sidebar } from './Sidebar'
-import { EMPTY_FILTERS, type Filters, type IssueDraft } from './store'
+import { EMPTY_FILTERS, type Filters, type IssueDraft, useAuth } from './store'
 import { type AppUI, isTyping, type Prefs, UICtx } from './ui'
 
 const PREFS_KEY = 'm3tal-review:prefs'
@@ -36,6 +36,7 @@ export function TrackerApp() {
   const [modal, setModal] = useState<{ open: boolean; editing: number | null; defaults?: Partial<IssueDraft> }>({ open: false, editing: null })
   const [palette, setPalette] = useState(false)
   const [nav, setNav] = useState(false)
+  const { ready } = useAuth()
 
   const setPrefs = useCallback((p: Partial<Prefs>) => {
     setPrefsState((cur) => {
@@ -85,6 +86,10 @@ export function TrackerApp() {
     () => ({ openCreate, openPalette, openEdit, openIssue, selected, filters, setFilters, prefs, setPrefs, openNav: () => setNav(true) }),
     [openCreate, openPalette, openEdit, openIssue, selected, filters, prefs, setPrefs],
   )
+
+  // The account's workspace is one request away. Showing the tracker before it
+  // lands would let edits be replaced by the copy that arrives with it.
+  if (!ready) return <div className="h-dvh bg-bg" />
 
   let page: React.ReactNode
   if (pathname === '/app') page = <IssuesView view="list" />

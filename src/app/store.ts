@@ -19,6 +19,7 @@ import {
   seedNotices,
   STATUSES,
 } from '@/data'
+import { isWorkspace } from '@/shared/workspace'
 
 /*
   The data layer. One state object. Signed out it is the browser-only demo in
@@ -80,17 +81,19 @@ function load(): State {
 let state: State = typeof window === 'undefined' ? fresh() : load()
 const listeners = new Set<() => void>()
 
+/** Keep a copy in this browser. Storage can be full or blocked; that is survivable. */
+function persistLocal(next: State) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(next))
+  } catch {
+    /* quota or private mode: keep working in memory */
+  }
+}
+
 function update(fn: (s: State) => State) {
   state = fn(state)
-  if (remote) {
-    scheduleSync()
-  } else {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state))
-    } catch {
-      /* quota or private mode: keep working in memory */
-    }
-  }
+  if (remote) scheduleSync()
+  else persistLocal(state)
   listeners.forEach((l) => l())
 }
 
@@ -107,9 +110,9 @@ if (typeof window !== 'undefined') {
 /* Accounts and remote persistence                                     */
 /* ------------------------------------------------------------------ */
 
-export type SessionUser = { sub: string; name: string | null; email: string | null; picture: string | null }
+export type SessionUser = { sub: string; name: string | null; email: string | null }
 
-type AuthState = { user: SessionUser | null; ready: boolean; remote: boolean; error: string | null; available: boolean; expired: boolean }
+type AuthState = { user: SessionUser | null; ready: boolean; error: string | null; available: boolean; expired: boolean }
 
 let session: SessionUser | null = null
 let authReady = false
@@ -118,7 +121,7 @@ let signInAvailable = false
 let syncError: string | null = null
 // Set when a save is refused because the session is gone: the visitor has to sign in again.
 let sessionExpired = false
-let authSnapshot: AuthState = { user: null, ready: false, remote: false, error: null, available: false, expired: false }
+let authSnapshot: AuthState = { user: null, ready: false, error: null, available: false, expired: false }
 let bootstrapped: Promise<void> | null = null
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 // The `updatedAt` this tab last saw: saves are rejected if the row moved on.
@@ -157,20 +160,19 @@ function endReplay() {
 }
 
 function refreshAuth() {
-  authSnapshot = { user: session, ready: authReady, remote, error: syncError, available: signInAvailable, expired: sessionExpired }
+  authSnapshot = { user: session, ready: authReady, error: syncError, available: signInAvailable, expired: sessionExpired }
   listeners.forEach((l) => l())
 }
 
-/** The signed-in visitor, whether their workspace is the remote one, and sync trouble. */
+/** One subscription helper for both stores below. */
+const subscribe = (fn: () => void) => {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+/** The signed-in visitor, and any trouble syncing their workspace. */
 export function useAuth(): AuthState {
-  return useSyncExternalStore(
-    (fn) => {
-      listeners.add(fn)
-      return () => listeners.delete(fn)
-    },
-    () => authSnapshot,
-    () => authSnapshot,
-  )
+  return useSyncExternalStore(subscribe, () => authSnapshot, () => authSnapshot)
 }
 
 /** Reads the session and, when signed in, replaces the local demo with the account's workspace. */
@@ -181,20 +183,21 @@ export function bootstrapAuth(): Promise<void> {
       const body = res.ok ? ((await res.json()) as { user: SessionUser | null; available?: boolean }) : { user: null, available: false }
       session = body.user ?? null
       signInAvailable = body.available === true
-      remote = !!session
       if (session) {
         const saved = await fetch('/api/state', { headers: { accept: 'application/json' }, credentials: 'same-origin' })
         if (saved.ok) {
           const payload = (await saved.json()) as { state: State | null; updatedAt: number | null }
           const kept = readResume()
-          // A copy kept for a different account is not this account's work.
-          if (kept && kept.sub !== session.sub) writeResume(null)
-          const replay = kept && kept.sub === session.sub ? kept : null
-          // Only a copy that is really in this browser may be replayed: with no
-          // stored workspace there is nothing to send back, and uploading a fresh
-          // demo would bury the account's own copy.
+          const replay = kept?.sub === session.sub ? kept : null
+          // Only a copy that is really in this browser may be replayed, and only
+          // for the account that kept it: with no stored workspace there is
+          // nothing to send back, and uploading a fresh demo would bury the
+          // account's own copy.
           const keptState = replay ? loadStored() : null
-          if (replay && !keptState) writeResume(null)
+          if (kept && (!replay || !keptState)) writeResume(null)
+          // Remote writes stay off until the account's workspace is in hand, so a
+          // slow load cannot turn this tab's demo into a save.
+          remote = true
           if (replay && keptState) {
             // Signed back in: push the copy kept at expiry before loading the account's.
             state = keptState
@@ -215,15 +218,14 @@ export function bootstrapAuth(): Promise<void> {
           }
         } else if (saved.status === 401) {
           session = null
-          remote = false
         } else {
           syncError = 'Could not load the workspace saved to your account.'
         }
       }
     } catch {
       session = null
-      remote = false
     } finally {
+      remote = !!session
       authReady = true
       refreshAuth()
     }
@@ -238,25 +240,32 @@ function scheduleSync(delay = 500) {
   syncTimer = setTimeout(() => void flushSave(), delay)
 }
 
-/** Take the server's newer copy after a rejected save. */
-function adoptServerCopy(
-  next: unknown,
-  updatedAt: number | null,
-  message = 'This workspace changed in another tab or on another device, so its newer copy was loaded here.',
-) {
-  const same = JSON.stringify(next) === JSON.stringify(state)
-  state = next && typeof next === 'object' && validState(next) ? next : fresh()
-  remoteUpdatedAt = updatedAt
-  pendingSave = false
+const CONFLICT = 'This workspace changed in another tab or on another device, so its newer copy was loaded here.'
+
+/**
+  Take the server's newer copy after a rejected save. When the visitor edited
+  while that save was in flight, their work stays on screen instead of being
+  replaced under them: it saves on top of the newer base on their next change.
+*/
+function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { keepLocalEdits?: boolean; message?: string } = {}) {
+  const incoming = next && validState(next) ? next : fresh()
   // A conflict over identical content is usually this tab's own pagehide write
   // landing late, so only say something when the copies really differ.
-  syncError = same ? null : message
+  const same = JSON.stringify(incoming) === JSON.stringify(state)
+  remoteUpdatedAt = updatedAt
+  if (!opts.keepLocalEdits) state = incoming
+  // Either way the save is finished; the next edit is what writes again.
+  pendingSave = false
+  syncError = opts.keepLocalEdits
+    ? 'This workspace changed in another tab or on another device. Your latest edits are still here and save on your next change.'
+    : same
+      ? null
+      : (opts.message ?? CONFLICT)
   refreshAuth()
 }
 
 function validState(value: unknown): value is State {
-  const s = value as State
-  return !!s && s.version === 1 && Array.isArray(s.issues)
+  return isWorkspace(value)
 }
 
 /**
@@ -269,18 +278,24 @@ function expireSession() {
   sessionExpired = true
   session = null
   remote = false
-  authReady = true
   pendingSave = false
   resuming = false
   if (syncTimer) clearTimeout(syncTimer)
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state))
-  } catch {
-    /* quota or private mode: the in-memory copy is still there */
-  }
+  persistLocal(state)
   if (owner) writeResume({ sub: owner, baseUpdatedAt: remoteUpdatedAt })
   syncError = 'Your session expired, so this change is only saved in this browser. Sign in again to save it to your account.'
   refreshAuth()
+}
+
+/** The one PUT this app makes: the debounced save and the pagehide flush share it. */
+function putState(keepalive: boolean, body: State) {
+  return fetch('/api/state', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'same-origin',
+    keepalive,
+    body: JSON.stringify({ state: body, baseUpdatedAt: remoteUpdatedAt }),
+  })
 }
 
 /**
@@ -292,13 +307,10 @@ async function flushSave() {
   syncTimer = undefined
   pendingSave = false
   saveInFlight = true
+  const sent = state
+  let failed = false
   try {
-    const res = await fetch('/api/state', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ state, baseUpdatedAt: remoteUpdatedAt }),
-    })
+    const res = await putState(false, sent)
     if (res.status === 401) {
       expireSession()
       return
@@ -307,13 +319,12 @@ async function flushSave() {
       const payload = (await res.json().catch(() => null)) as { state?: unknown; updatedAt?: number | null } | null
       const replaying = resuming
       if (replaying) endReplay()
-      adoptServerCopy(
-        payload?.state ?? null,
-        payload?.updatedAt ?? null,
-        replaying
+      adoptServerCopy(payload?.state ?? null, payload?.updatedAt ?? null, {
+        keepLocalEdits: state !== sent,
+        message: replaying
           ? 'Signed in, but this account changed while you were signed out, so the browser copy was not applied. It is still kept in this browser.'
           : undefined,
-      )
+      })
       return
     }
     if (!res.ok) throw new Error(String(res.status))
@@ -325,41 +336,42 @@ async function flushSave() {
       refreshAuth()
     }
   } catch {
-    // Not lost: the dirty flag stays set and the next edit retries.
+    // Not lost: the dirty flag stays set and the next edit retries. Scheduling a
+    // retry here would resend a body the server already refused (400, 413) forever.
+    failed = true
     pendingSave = true
     syncError = 'Your last change is not saved to your account yet. It retries on the next edit.'
     refreshAuth()
   } finally {
     saveInFlight = false
     // Coalesced edits from during the save go out next, through the same one-at-a-time path.
-    if (pendingSave) scheduleSync(400)
+    if (pendingSave && !failed) scheduleSync(400)
   }
 }
 
 if (typeof window !== 'undefined') {
-  // Leaving the page: only if something is unsaved, so no duplicate write.
-  window.addEventListener('pagehide', () => {
-    if (!remote || !pendingSave) return
+  window.addEventListener('pagehide', (event) => {
+    // Back/forward cache: the page is frozen rather than gone, so keep the save
+    // queued instead of spending it now and losing it on restore.
+    if (event.persisted || !remote) return
+    if (!pendingSave && !saveInFlight) return
+    // Keep a copy before the request. A save already in flight may win, and the
+    // next page load replays what is here rather than dropping the last edits.
+    persistLocal(state)
+    if (session) writeResume({ sub: session.sub, baseUpdatedAt: remoteUpdatedAt })
     if (syncTimer) clearTimeout(syncTimer)
-    void fetch('/api/state', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      credentials: 'same-origin',
-      keepalive: true,
-      body: JSON.stringify({ state, baseUpdatedAt: remoteUpdatedAt }),
-    })
+    void putState(true, state)
+  })
+
+  window.addEventListener('pageshow', (event) => {
+    // Restored from the back/forward cache: the timer went with the page, so
+    // anything still queued needs a new one.
+    if (event.persisted && remote && pendingSave) scheduleSync(0)
   })
 }
 
 export function useStore<T>(select: (s: State) => T): T {
-  return useSyncExternalStore(
-    (fn) => {
-      listeners.add(fn)
-      return () => listeners.delete(fn)
-    },
-    () => select(state),
-    () => select(state),
-  )
+  return useSyncExternalStore(subscribe, () => select(state), () => select(state))
 }
 
 export const getState = () => state
@@ -479,10 +491,26 @@ export function patchLabel(id: string, patch: Partial<Omit<Label, 'id'>>) {
   update((s) => ({ ...s, labels: s.labels.map((l) => (l.id === id ? { ...l, ...patch } : l)) }))
 }
 export function removeLabel(id: string) {
+  const label = state.labels.find((l) => l.id === id) ?? null
+  const affected = state.issues.filter((i) => i.labelIds.includes(id)).map((i) => i.number)
   update((s) => ({
     ...s,
     labels: s.labels.filter((l) => l.id !== id),
     issues: s.issues.map((i) => (i.labelIds.includes(id) ? { ...i, labelIds: i.labelIds.filter((x) => x !== id) } : i)),
+  }))
+  // Returned so the caller can undo it: a new label would have a new id, which
+  // none of the issues would point at.
+  return label ? { label, affected } : null
+}
+
+/** Put a deleted label back under its original id, with the issues it was on. */
+export function restoreLabel(removed: { label: Label; affected: number[] }) {
+  update((s) => ({
+    ...s,
+    labels: [...s.labels, removed.label],
+    issues: s.issues.map((i) =>
+      removed.affected.includes(i.number) && !i.labelIds.includes(removed.label.id) ? { ...i, labelIds: [...i.labelIds, removed.label.id] } : i,
+    ),
   }))
 }
 
