@@ -59,7 +59,8 @@ function fresh(): State {
   }
 }
 
-function load(): State {
+/** The workspace stored in this browser, or null when there is none. */
+function loadStored(): State | null {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
@@ -67,9 +68,13 @@ function load(): State {
       if (parsed.version === 1 && Array.isArray(parsed.issues)) return parsed
     }
   } catch {
-    /* corrupt or blocked storage: start fresh */
+    /* corrupt or blocked storage */
   }
-  return fresh()
+  return null
+}
+
+function load(): State {
+  return loadStored() ?? fresh()
 }
 
 let state: State = typeof window === 'undefined' ? fresh() : load()
@@ -179,9 +184,14 @@ export function bootstrapAuth(): Promise<void> {
           // A copy kept for a different account is not this account's work.
           if (kept && kept.sub !== session.sub) writeResume(null)
           const replay = kept && kept.sub === session.sub ? kept : null
-          if (replay) {
+          // Only a copy that is really in this browser may be replayed: with no
+          // stored workspace there is nothing to send back, and uploading a fresh
+          // demo would bury the account's own copy.
+          const keptState = replay ? loadStored() : null
+          if (replay && !keptState) writeResume(null)
+          if (replay && keptState) {
             // Signed back in: push the copy kept at expiry before loading the account's.
-            state = load()
+            state = keptState
             remoteUpdatedAt = replay.baseUpdatedAt
             resuming = true
             pendingSave = true
