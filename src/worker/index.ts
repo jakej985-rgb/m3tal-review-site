@@ -2,6 +2,8 @@ import { createFreebuffAuth, type FreebuffAuth, isSameOriginRequest } from '@fre
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 
+import { isWorkspace } from '../shared/workspace'
+
 // The Worker in front of the app. Signed-in visitors get their workspace stored
 // per account in D1; signed-out visitors use the browser-only demo in the client.
 type Env = {
@@ -51,31 +53,15 @@ const schemas = new WeakMap<D1Database, Promise<unknown>>()
 function ensureSchema(db: D1Database) {
   let ready = schemas.get(db)
   if (!ready) {
-    ready = db.prepare(SCHEMA).run()
+    ready = db.prepare(SCHEMA).run().catch((error: unknown) => {
+      // Never cache a failure: one transient D1 error would otherwise fail every
+      // later request in this isolate.
+      schemas.delete(db)
+      throw error
+    })
     schemas.set(db, ready)
   }
   return ready
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-
-/** Accept only the shape the client actually stores, so the row is never junk. */
-function validWorkspace(value: unknown) {
-  if (!isRecord(value) || value.version !== 1) return null
-  if (!Array.isArray(value.issues) || value.issues.length > 2000) return null
-  for (const key of ['members', 'labels', 'cycles', 'notices']) {
-    if (!Array.isArray(value[key])) return null
-  }
-  if (typeof value.workspace !== 'string' || typeof value.meId !== 'string') return null
-  if (typeof value.nextNumber !== 'number') return null
-  const issuesOk = value.issues.every(
-    (i) => isRecord(i) && typeof i.number === 'number' && typeof i.title === 'string' && typeof i.status === 'string' && Array.isArray(i.comments),
-  )
-  return issuesOk ? value : null
-}
-
-function db(c: { env: Env }) {
-  return c.env.DB ?? null
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,7 +78,7 @@ app.get('/api/me', async (c) => {
   // UI hides the sign-in controls instead of linking to a route that cannot work.
   return c.json({
     available: !!auth,
-    user: user ? { sub: user.sub, name: user.name ?? null, email: user.email ?? null, picture: user.picture ?? null } : null,
+    user: user ? { sub: user.sub, name: user.name ?? null, email: user.email ?? null } : null,
   })
 })
 
@@ -100,7 +86,7 @@ app.get('/api/me', async (c) => {
 app.get('/api/state', async (c) => {
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Sign in required' }, 401)
-  const store = db(c)
+  const store = c.env.DB ?? null
   if (!store) return c.json({ error: 'Storage is not configured.' }, 503)
   c.header('Cache-Control', 'private, no-store')
   await ensureSchema(store)
@@ -129,13 +115,13 @@ app.put('/api/state', async (c) => {
   if (!isSameOriginRequest(c.req.raw, c.env.APP_ORIGIN ?? '')) return c.json({ error: 'Cross-origin request refused.' }, 403)
   const user = await currentUser(c)
   if (!user) return c.json({ error: 'Sign in required' }, 401)
-  const store = db(c)
+  const store = c.env.DB ?? null
   if (!store) return c.json({ error: 'Storage is not configured.' }, 503)
   const body = (await c.req.json().catch(() => null)) as { state?: unknown; baseUpdatedAt?: unknown } | null
-  const state = validWorkspace(body?.state)
-  if (!state) return c.json({ error: 'Invalid workspace payload.' }, 400)
+  const payload = body?.state
+  if (!isWorkspace(payload)) return c.json({ error: 'Invalid workspace payload.' }, 400)
   const base = typeof body?.baseUpdatedAt === 'number' ? body.baseUpdatedAt : null
-  const json = JSON.stringify(state)
+  const json = JSON.stringify(payload)
   await ensureSchema(store)
   c.header('Cache-Control', 'private, no-store')
 
@@ -180,6 +166,9 @@ app.post('/api/subscribe', async (c) => {
 app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw))
+
+// Exported so the Worker's own tests can drive routes without a live session.
+export { app }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

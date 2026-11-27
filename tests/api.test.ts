@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import app from '../src/worker/index'
+import { app } from '../src/worker/index'
 
 const routes = ['/api/subscribe']
 
