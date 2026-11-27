@@ -19,7 +19,7 @@ import {
   seedNotices,
   STATUSES,
 } from '@/data'
-import { isWorkspace } from '@/shared/workspace'
+import { isWorkspace, mergeWorkspace } from '@/shared/workspace'
 
 /*
   The data layer. One state object. Signed out it is the browser-only demo in
@@ -241,26 +241,30 @@ function scheduleSync(delay = 500) {
 }
 
 const CONFLICT = 'This workspace changed in another tab or on another device, so its newer copy was loaded here.'
+const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
   Take the server's newer copy after a rejected save. When the visitor edited
-  while that save was in flight, their work stays on screen instead of being
-  replaced under them: it saves on top of the newer base on their next change.
+  while that save was in flight, those edits are merged onto the newer copy and
+  queued, so neither side's work is lost and nothing is overwritten blind.
 */
-function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { keepLocalEdits?: boolean; message?: string } = {}) {
+function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?: State; message?: string } = {}) {
   const incoming = next && validState(next) ? next : fresh()
   // A conflict over identical content is usually this tab's own pagehide write
   // landing late, so only say something when the copies really differ.
-  const same = JSON.stringify(incoming) === JSON.stringify(state)
+  const sameContent = sameJson(incoming, state)
   remoteUpdatedAt = updatedAt
-  if (!opts.keepLocalEdits) state = incoming
-  // Either way the save is finished; the next edit is what writes again.
-  pendingSave = false
-  syncError = opts.keepLocalEdits
-    ? 'This workspace changed in another tab or on another device. Your latest edits are still here and save on your next change.'
-    : same
-      ? null
-      : (opts.message ?? CONFLICT)
+  if (opts.sent && !sameJson(state, opts.sent)) {
+    state = mergeWorkspace(opts.sent, state, incoming)
+    // The merged copy is not on the server yet: keep it dirty so it is saved
+    // against the newer base instead of sitting in memory.
+    pendingSave = true
+    syncError = 'This workspace changed in another tab or on another device. Your edits were merged with its newer copy.'
+  } else {
+    state = incoming
+    pendingSave = false
+    syncError = sameContent ? null : (opts.message ?? CONFLICT)
+  }
   refreshAuth()
 }
 
@@ -320,7 +324,9 @@ async function flushSave() {
       const replaying = resuming
       if (replaying) endReplay()
       adoptServerCopy(payload?.state ?? null, payload?.updatedAt ?? null, {
-        keepLocalEdits: state !== sent,
+        // A replay keeps the documented rule instead: the account's copy wins and
+        // the browser copy stays in storage, so it is not merged into the account.
+        sent: replaying ? undefined : sent,
         message: replaying
           ? 'Signed in, but this account changed while you were signed out, so the browser copy was not applied. It is still kept in this browser.'
           : undefined,

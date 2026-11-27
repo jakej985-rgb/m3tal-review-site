@@ -66,3 +66,66 @@ export function isWorkspace(value: unknown): boolean {
   if (!Array.isArray(value.notices) || !value.notices.every(isNotice)) return false
   return isString(value.workspace) && isString(value.meId) && isNumber(value.nextNumber)
 }
+
+/* ------------------------------------------------------------------ */
+/* Merging two copies                                                  */
+/* ------------------------------------------------------------------ */
+
+const json = (v: unknown) => JSON.stringify(v)
+
+/** The parts of a workspace the merge works on: the scalars and the five keyed lists. */
+export type WorkspaceLists = {
+  workspace: string
+  meId: string
+  nextNumber: number
+  issues: { number: number }[]
+  members: { id: string }[]
+  labels: { id: string }[]
+  cycles: { id: string }[]
+  notices: { id: string }[]
+}
+
+/**
+  Per-entry three-way merge: an entry this tab changed since `base` is kept as it
+  is here (including a deletion), and every other entry comes from `incoming`.
+  Entries only the other side has are appended.
+*/
+function mergeBy<T>(base: T[], local: T[], incoming: T[], keyOf: (x: T) => string | number): T[] {
+  const baseByKey = new Map(base.map((x) => [keyOf(x), x]))
+  const localByKey = new Map(local.map((x) => [keyOf(x), x]))
+  const incomingByKey = new Map(incoming.map((x) => [keyOf(x), x]))
+  const merged: T[] = []
+  const seen = new Set<string | number>()
+  for (const key of [...localByKey.keys(), ...baseByKey.keys()]) {
+    if (seen.has(key)) continue
+    seen.add(key)
+    // Unchanged here means the other side owns it, including when it deleted it.
+    const chosen = json(localByKey.get(key)) === json(baseByKey.get(key)) ? incomingByKey.get(key) : localByKey.get(key)
+    if (chosen) merged.push(chosen)
+  }
+  for (const item of incoming) {
+    if (!seen.has(keyOf(item))) merged.push(item)
+  }
+  return merged
+}
+
+/**
+  Merge this tab's unsaved work onto the workspace another tab or device saved.
+  Neither side is thrown away: entries changed here win, everything else is the
+  newer copy's, and scalars this tab did not touch come from `incoming`.
+*/
+export function mergeWorkspace<T extends WorkspaceLists>(base: T, local: T, incoming: T): T {
+  const pick = <K extends keyof T>(field: K) => (json(local[field]) === json(base[field]) ? incoming[field] : local[field])
+  return {
+    ...incoming,
+    issues: mergeBy(base.issues, local.issues, incoming.issues, (i) => i.number),
+    members: mergeBy(base.members, local.members, incoming.members, (m) => m.id),
+    labels: mergeBy(base.labels, local.labels, incoming.labels, (l) => l.id),
+    cycles: mergeBy(base.cycles, local.cycles, incoming.cycles, (c) => c.id),
+    notices: mergeBy(base.notices, local.notices, incoming.notices, (n) => n.id),
+    workspace: pick('workspace') as string,
+    meId: pick('meId') as string,
+    // Issue numbers are handed out here, so the higher counter keeps them unique.
+    nextNumber: Math.max(local.nextNumber, incoming.nextNumber),
+  } as T
+}
