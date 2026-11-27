@@ -116,16 +116,25 @@ function mergeBy<T>(base: T[], local: T[], incoming: T[], keyOf: (x: T) => strin
 */
 export function mergeWorkspace<T extends WorkspaceLists>(base: T, local: T, incoming: T): T {
   const pick = <K extends keyof T>(field: K) => (json(local[field]) === json(base[field]) ? incoming[field] : local[field])
+  // Two tabs can hand out the same issue number between saves. Keying the merge by
+  // number would collapse the two into one, so this tab's new issue moves to a
+  // fresh number instead. (Notices that pointed at an issue renumbered here keep
+  // their old number; they do not reference an issue that exists any more.)
+  const baseNumbers = new Set(base.issues.map((i) => i.number))
+  const incomingNumbers = new Set(incoming.issues.map((i) => i.number))
+  let nextNumber = Math.max(local.nextNumber, incoming.nextNumber)
+  const localIssues = local.issues.map((issue) =>
+    baseNumbers.has(issue.number) || !incomingNumbers.has(issue.number) ? issue : { ...issue, number: nextNumber++ },
+  )
   return {
     ...incoming,
-    issues: mergeBy(base.issues, local.issues, incoming.issues, (i) => i.number),
+    issues: mergeBy(base.issues, localIssues, incoming.issues, (i) => i.number),
     members: mergeBy(base.members, local.members, incoming.members, (m) => m.id),
     labels: mergeBy(base.labels, local.labels, incoming.labels, (l) => l.id),
     cycles: mergeBy(base.cycles, local.cycles, incoming.cycles, (c) => c.id),
     notices: mergeBy(base.notices, local.notices, incoming.notices, (n) => n.id),
     workspace: pick('workspace') as string,
     meId: pick('meId') as string,
-    // Issue numbers are handed out here, so the higher counter keeps them unique.
-    nextNumber: Math.max(local.nextNumber, incoming.nextNumber),
+    nextNumber,
   } as T
 }

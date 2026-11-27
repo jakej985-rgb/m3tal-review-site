@@ -67,6 +67,16 @@ test('scalars this tab did not touch come from the newer copy', () => {
   expect(merged.nextNumber).toBe(7)
 })
 
+test('two tabs that handed out the same issue number keep both issues', () => {
+  const base = paper({ issues: [{ number: 1, title: 'A' }], nextNumber: 2 })
+  const local = paper({ issues: [{ number: 2, title: 'Mine' }, { number: 1, title: 'A' }], nextNumber: 3 })
+  const incoming = paper({ issues: [{ number: 2, title: 'Theirs' }, { number: 1, title: 'A' }], nextNumber: 3 })
+  const merged = mergeWorkspace(base, local, incoming)
+  expect(merged.issues.map((i) => i.title).sort()).toEqual(['A', 'Mine', 'Theirs'])
+  expect(new Set(merged.issues.map((i) => i.number)).size).toBe(3)
+  expect(merged.nextNumber).toBe(4)
+})
+
 test('a rename here wins over the newer copy', () => {
   const base = paper({ workspace: 'm3tal-review' })
   const local = paper({ workspace: 'renamed here' })

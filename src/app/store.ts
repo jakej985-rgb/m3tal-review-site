@@ -130,6 +130,13 @@ let pendingSave = false
 let saveInFlight = false
 // True while the save in flight is the replay of the browser copy kept at expiry.
 let resuming = false
+// The copy the server last acknowledged. A rejected save is merged against this,
+// not against the copy that was sent, so the entries this tab changed are exactly
+// the ones it keeps — including in a copy the server refused.
+let synced: State = state
+// How many merges in a row this tab has produced, so a busy workspace cannot loop.
+let mergeRounds = 0
+const MAX_MERGE_ROUNDS = 3
 
 type Resume = { sub: string; baseUpdatedAt: number | null }
 
@@ -198,6 +205,8 @@ export function bootstrapAuth(): Promise<void> {
           // Remote writes stay off until the account's workspace is in hand, so a
           // slow load cannot turn this tab's demo into a save.
           remote = true
+          // What the server holds right now: the base a later conflict merges onto.
+          synced = payload.state && validState(payload.state) ? payload.state : fresh()
           if (replay && keptState) {
             // Signed back in: push the copy kept at expiry before loading the account's.
             state = keptState
@@ -244,9 +253,9 @@ const CONFLICT = 'This workspace changed in another tab or on another device, so
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
-  Take the server's newer copy after a rejected save. When the visitor edited
-  while that save was in flight, those edits are merged onto the newer copy and
-  queued, so neither side's work is lost and nothing is overwritten blind.
+  Take the server's newer copy after a rejected save. Edits this tab made after
+  sending its copy are merged onto the newer one and queued, and so is a merged
+  copy that is itself rejected — neither is thrown away or written over blind.
 */
 function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?: State; message?: string } = {}) {
   const incoming = next && validState(next) ? next : fresh()
@@ -254,17 +263,29 @@ function adoptServerCopy(next: unknown, updatedAt: number | null, opts: { sent?:
   // landing late, so only say something when the copies really differ.
   const sameContent = sameJson(incoming, state)
   remoteUpdatedAt = updatedAt
-  if (opts.sent && !sameJson(state, opts.sent)) {
-    state = mergeWorkspace(opts.sent, state, incoming)
+  // Nothing to merge when this tab is back in step with the last acknowledged copy.
+  const changedHere = !!opts.sent && !sameJson(synced, state)
+  if (changedHere && mergeRounds < MAX_MERGE_ROUNDS) {
+    state = mergeWorkspace(synced, state, incoming)
+    mergeRounds += 1
     // The merged copy is not on the server yet: keep it dirty so it is saved
     // against the newer base instead of sitting in memory.
     pendingSave = true
     syncError = 'This workspace changed in another tab or on another device. Your edits were merged with its newer copy.'
   } else {
+    const exhausted = changedHere
     state = incoming
     pendingSave = false
-    syncError = sameContent ? null : (opts.message ?? CONFLICT)
+    mergeRounds = 0
+    syncError = sameContent
+      ? null
+      : exhausted
+        ? 'This workspace kept changing in another tab or on another device, so its newest copy was loaded and your last edit could not be saved.'
+        : (opts.message ?? CONFLICT)
   }
+  // The server's copy is authoritative from here on, for the next merge and for
+  // the diff that decides what this tab changed.
+  synced = incoming
   refreshAuth()
 }
 
@@ -284,6 +305,7 @@ function expireSession() {
   remote = false
   pendingSave = false
   resuming = false
+  mergeRounds = 0
   if (syncTimer) clearTimeout(syncTimer)
   persistLocal(state)
   if (owner) writeResume({ sub: owner, baseUpdatedAt: remoteUpdatedAt })
@@ -337,6 +359,9 @@ async function flushSave() {
     const payload = (await res.json().catch(() => null)) as { updatedAt?: number } | null
     if (typeof payload?.updatedAt === 'number') remoteUpdatedAt = payload.updatedAt
     if (resuming) endReplay()
+    // The server has this copy now: it is the base a later conflict is measured against.
+    synced = sent
+    mergeRounds = 0
     if (syncError) {
       syncError = null
       refreshAuth()
