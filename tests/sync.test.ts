@@ -217,6 +217,40 @@ test('a restore whose save fails keeps the parked copy for another try', async (
   expect(titles(puts[puts.length - 1].state)).toContain('Keep B')
 })
 
+test('a restore that hits a 409 is merged, and only its acknowledged save clears the record', async () => {
+  const store = await import('../src/app/store')
+  await parkACopy(store, 'Junction', 9_050)
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+
+  // The account moves again between the restore and its save.
+  const newest = store.getState() as Workspace
+  replies.push(() => json({ conflict: true, ...elsewhere(newest, 'Raced', 1_600, 9_060) }, 409))
+  // Hold the merged save, so the record can be checked while it is still unanswered.
+  const releaseMerged = holdNextPut()
+  const before = puts.length
+  store.restoreKeptCopy()
+
+  await waitFor(() => puts.length === before + 1)
+  expect(puts[before].baseUpdatedAt).toBe(1_500)
+  expect(titles(puts[before].state)).toContain('Junction A')
+
+  // Rejected, so the restored copy is merged onto the newer base rather than parked
+  // again, and goes back out under the newer updatedAt.
+  await waitFor(() => puts.length === before + 2)
+  expect(puts[before + 1].baseUpdatedAt).toBe(1_600)
+  expect(titles(puts[before + 1].state)).toContain('Junction A')
+  expect(titles(puts[before + 1].state)).toContain('Junction B')
+  expect(titles(puts[before + 1].state)).toContain('Raced')
+  // Nothing has acknowledged the restore yet: the record is still there to try again.
+  expect(memory.get('m3tal-review:kept')).toBeTruthy()
+
+  // The merge was acknowledged with the restored edits in it, so the record can go.
+  releaseMerged(json({ ok: true, updatedAt: 9_700 }))
+  await waitFor(() => memory.get('m3tal-review:kept') === undefined)
+  expect(titles(store.getState() as Workspace)).toContain('Junction A')
+  expect(titles(store.getState() as Workspace)).toContain('Raced')
+})
+
 test('a 401 on the restore save leaves the record in storage', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Expire', 9_040)
