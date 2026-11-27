@@ -150,6 +150,12 @@ function writeResume(record: Resume | null) {
   }
 }
 
+/** A replay is over: forget the kept copy and stop tagging conflicts as replays. */
+function endReplay() {
+  resuming = false
+  writeResume(null)
+}
+
 function refreshAuth() {
   authSnapshot = { user: session, ready: authReady, remote, error: syncError, available: signInAvailable, expired: sessionExpired }
   listeners.forEach((l) => l())
@@ -196,15 +202,16 @@ export function bootstrapAuth(): Promise<void> {
             resuming = true
             pendingSave = true
             void flushSave()
-          } else if (payload.state && validState(payload.state)) {
-            state = payload.state
-            remoteUpdatedAt = payload.updatedAt ?? null
           } else {
-            // First visit on this account: seed the demo workspace into it.
-            state = fresh()
             remoteUpdatedAt = payload.updatedAt ?? null
-            pendingSave = true
-            void flushSave()
+            if (payload.state && validState(payload.state)) {
+              state = payload.state
+            } else {
+              // First visit on this account: seed the demo workspace into it.
+              state = fresh()
+              pendingSave = true
+              void flushSave()
+            }
           }
         } else if (saved.status === 401) {
           session = null
@@ -299,8 +306,7 @@ async function flushSave() {
     if (res.status === 409) {
       const payload = (await res.json().catch(() => null)) as { state?: unknown; updatedAt?: number | null } | null
       const replaying = resuming
-      resuming = false
-      writeResume(null)
+      if (replaying) endReplay()
       adoptServerCopy(
         payload?.state ?? null,
         payload?.updatedAt ?? null,
@@ -313,10 +319,7 @@ async function flushSave() {
     if (!res.ok) throw new Error(String(res.status))
     const payload = (await res.json().catch(() => null)) as { updatedAt?: number } | null
     if (typeof payload?.updatedAt === 'number') remoteUpdatedAt = payload.updatedAt
-    if (resuming) {
-      resuming = false
-      writeResume(null)
-    }
+    if (resuming) endReplay()
     if (syncError) {
       syncError = null
       refreshAuth()
@@ -328,10 +331,8 @@ async function flushSave() {
     refreshAuth()
   } finally {
     saveInFlight = false
-    if (pendingSave && remote) {
-      if (syncTimer) clearTimeout(syncTimer)
-      syncTimer = setTimeout(() => void flushSave(), 400)
-    }
+    // Coalesced edits from during the save go out next, through the same one-at-a-time path.
+    if (pendingSave) scheduleSync(400)
   }
 }
 
