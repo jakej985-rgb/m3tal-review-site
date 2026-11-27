@@ -62,14 +62,11 @@ export function SidebarAccount() {
     <div className="mt-2 px-2.5 py-1.5">
       <div className="flex items-center gap-2.5">
         <Avatar member={avatar} size="sm" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] text-muted">{ready && user ? (user.name ?? user.email ?? me?.name) : (me?.name ?? 'Demo')}</span>
-          <span className="block truncate text-[11px] text-faint">{status}</span>
-        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{ready && user ? (user.name ?? user.email ?? me?.name) : (me?.name ?? 'Demo')}</span>
         {ready &&
           available &&
           (user ? (
-            <SignOutButton returnTo="/" className="inline-flex min-h-8 items-center text-xs text-muted hover:text-fg">
+            <SignOutButton returnTo="/" className="inline-flex min-h-8 shrink-0 items-center text-xs text-muted hover:text-fg">
               Sign out
             </SignOutButton>
           ) : (
@@ -78,6 +75,9 @@ export function SidebarAccount() {
             </SignInWithFreebuff>
           ))}
       </div>
+      {/* Under the row rather than in it: the button beside the name leaves too little
+          width for the status at 232px, and the drawer is only a little wider. */}
+      <p className="mt-0.5 pl-[32px] text-[11px] leading-snug text-faint">{status}</p>
       {error && (
         <p role="status" className="mt-1.5 text-[11px] leading-snug text-danger">
           {error}
@@ -86,11 +86,13 @@ export function SidebarAccount() {
       {kept && (
         <div className="mt-2 border border-line-strong/70 bg-surface-2/50 px-2 py-1.5">
           <p className="text-[11px] leading-snug text-muted">Edits kept {ago(kept.savedAt)}, when a save could not be applied.</p>
+          {/* Equal halves: a ghost Discard beside an outlined Restore read as plain
+              text, and the pair should look like two choices of the same weight. */}
           <div className="mt-1.5 flex items-center gap-1">
-            <Button size="sm" variant="outline" onClick={restoreKeptCopy} className="h-7 px-2 text-[12px]">
+            <Button size="sm" variant="outline" onClick={restoreKeptCopy} className="h-7 flex-1 px-2 text-[12px]">
               Restore
             </Button>
-            <Button size="sm" variant="ghost" onClick={discardKeptCopy} className="h-7 px-2 text-[12px]">
+            <Button size="sm" variant="outline" onClick={discardKeptCopy} className="h-7 flex-1 px-2 text-[12px] text-muted">
               Discard
             </Button>
           </div>
