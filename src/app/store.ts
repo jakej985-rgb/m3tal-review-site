@@ -40,6 +40,9 @@ export type State = {
 }
 
 const KEY = 'm3tal-review:v1'
+// Set when a save is refused for a dead session: on the next sign-in this copy is
+// replayed to the account instead of the account copy replacing it.
+const RESUME_KEY = 'm3tal-review:resume'
 
 function fresh(): State {
   const issues = seedIssues()
@@ -101,23 +104,49 @@ if (typeof window !== 'undefined') {
 
 export type SessionUser = { sub: string; name: string | null; email: string | null; picture: string | null }
 
-type AuthState = { user: SessionUser | null; ready: boolean; remote: boolean; error: string | null; available: boolean }
+type AuthState = { user: SessionUser | null; ready: boolean; remote: boolean; error: string | null; available: boolean; expired: boolean }
 
 let session: SessionUser | null = null
 let authReady = false
 let remote = false
 let signInAvailable = false
 let syncError: string | null = null
-let authSnapshot: AuthState = { user: null, ready: false, remote: false, error: null, available: false }
+// Set when a save is refused because the session is gone: the visitor has to sign in again.
+let sessionExpired = false
+let authSnapshot: AuthState = { user: null, ready: false, remote: false, error: null, available: false, expired: false }
 let bootstrapped: Promise<void> | null = null
 let syncTimer: ReturnType<typeof setTimeout> | undefined
 // The `updatedAt` this tab last saw: saves are rejected if the row moved on.
 let remoteUpdatedAt: number | null = null
 let pendingSave = false
 let saveInFlight = false
+// True while the save in flight is the replay of the browser copy kept at expiry.
+let resuming = false
+
+type Resume = { sub: string; baseUpdatedAt: number | null }
+
+function readResume(): Resume | null {
+  try {
+    const raw = localStorage.getItem(RESUME_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Resume
+    return typeof parsed?.sub === 'string' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeResume(record: Resume | null) {
+  try {
+    if (record) localStorage.setItem(RESUME_KEY, JSON.stringify(record))
+    else localStorage.removeItem(RESUME_KEY)
+  } catch {
+    /* storage unavailable: the in-memory copy is all there is */
+  }
+}
 
 function refreshAuth() {
-  authSnapshot = { user: session, ready: authReady, remote, error: syncError, available: signInAvailable }
+  authSnapshot = { user: session, ready: authReady, remote, error: syncError, available: signInAvailable, expired: sessionExpired }
   listeners.forEach((l) => l())
 }
 
@@ -146,12 +175,24 @@ export function bootstrapAuth(): Promise<void> {
         const saved = await fetch('/api/state', { headers: { accept: 'application/json' }, credentials: 'same-origin' })
         if (saved.ok) {
           const payload = (await saved.json()) as { state: State | null; updatedAt: number | null }
-          remoteUpdatedAt = payload.updatedAt ?? null
-          if (payload.state && Array.isArray(payload.state.issues) && payload.state.version === 1) {
+          const kept = readResume()
+          // A copy kept for a different account is not this account's work.
+          if (kept && kept.sub !== session.sub) writeResume(null)
+          const replay = kept && kept.sub === session.sub ? kept : null
+          if (replay) {
+            // Signed back in: push the copy kept at expiry before loading the account's.
+            state = load()
+            remoteUpdatedAt = replay.baseUpdatedAt
+            resuming = true
+            pendingSave = true
+            void flushSave()
+          } else if (payload.state && validState(payload.state)) {
             state = payload.state
+            remoteUpdatedAt = payload.updatedAt ?? null
           } else {
             // First visit on this account: seed the demo workspace into it.
             state = fresh()
+            remoteUpdatedAt = payload.updatedAt ?? null
             pendingSave = true
             void flushSave()
           }
@@ -181,20 +222,48 @@ function scheduleSync(delay = 500) {
 }
 
 /** Take the server's newer copy after a rejected save. */
-function adoptServerCopy(next: unknown, updatedAt: number | null) {
+function adoptServerCopy(
+  next: unknown,
+  updatedAt: number | null,
+  message = 'This workspace changed in another tab or on another device, so its newer copy was loaded here.',
+) {
   const same = JSON.stringify(next) === JSON.stringify(state)
   state = next && typeof next === 'object' && validState(next) ? next : fresh()
   remoteUpdatedAt = updatedAt
   pendingSave = false
   // A conflict over identical content is usually this tab's own pagehide write
   // landing late, so only say something when the copies really differ.
-  syncError = same ? null : 'This workspace changed in another tab or on another device, so its newer copy was loaded here.'
+  syncError = same ? null : message
   refreshAuth()
 }
 
 function validState(value: unknown): value is State {
   const s = value as State
   return !!s && s.version === 1 && Array.isArray(s.issues)
+}
+
+/**
+  The session died between page loads. Stop writing, keep the visitor's unsaved
+  work in this browser, and ask them to sign in again rather than retrying a
+  save that cannot succeed.
+*/
+function expireSession() {
+  const owner = session?.sub ?? null
+  sessionExpired = true
+  session = null
+  remote = false
+  authReady = true
+  pendingSave = false
+  resuming = false
+  if (syncTimer) clearTimeout(syncTimer)
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state))
+  } catch {
+    /* quota or private mode: the in-memory copy is still there */
+  }
+  if (owner) writeResume({ sub: owner, baseUpdatedAt: remoteUpdatedAt })
+  syncError = 'Your session expired, so this change is only saved in this browser. Sign in again to save it to your account.'
+  refreshAuth()
 }
 
 /**
@@ -213,14 +282,31 @@ async function flushSave() {
       credentials: 'same-origin',
       body: JSON.stringify({ state, baseUpdatedAt: remoteUpdatedAt }),
     })
+    if (res.status === 401) {
+      expireSession()
+      return
+    }
     if (res.status === 409) {
       const payload = (await res.json().catch(() => null)) as { state?: unknown; updatedAt?: number | null } | null
-      adoptServerCopy(payload?.state ?? null, payload?.updatedAt ?? null)
+      const replaying = resuming
+      resuming = false
+      writeResume(null)
+      adoptServerCopy(
+        payload?.state ?? null,
+        payload?.updatedAt ?? null,
+        replaying
+          ? 'Signed in, but this account changed while you were signed out, so the browser copy was not applied. It is still kept in this browser.'
+          : undefined,
+      )
       return
     }
     if (!res.ok) throw new Error(String(res.status))
     const payload = (await res.json().catch(() => null)) as { updatedAt?: number } | null
     if (typeof payload?.updatedAt === 'number') remoteUpdatedAt = payload.updatedAt
+    if (resuming) {
+      resuming = false
+      writeResume(null)
+    }
     if (syncError) {
       syncError = null
       refreshAuth()

@@ -43,7 +43,7 @@ export function HeaderAccount() {
 
 /** The tracker's account row: who you are, and whether edits leave this browser. */
 export function SidebarAccount() {
-  const { user, ready, error, available } = useAuth()
+  const { user, ready, error, available, expired } = useAuth()
   const me = useStore((s) => s.members.find((m) => m.id === s.meId))
   // Signed in, the avatar is the account's, not the demo persona's.
   const avatar = user
@@ -54,7 +54,7 @@ export function SidebarAccount() {
         hue: [...user.sub].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 360,
       }
     : me
-  const status = !ready ? 'Checking…' : !available ? me?.name : user ? 'Saved to your account' : 'Demo — this browser only'
+  const status = !ready ? 'Checking…' : !available ? me?.name : user ? 'Saved to your account' : expired ? 'Session expired — this browser only' : 'Demo — this browser only'
 
   return (
     <div className="mt-2 px-2.5 py-1.5">
@@ -71,8 +71,8 @@ export function SidebarAccount() {
               Sign out
             </SignOutButton>
           ) : (
-            <SignInWithFreebuff returnTo="/app" className="inline-flex min-h-8 items-center text-xs text-muted hover:text-fg">
-              Sign in
+            <SignInWithFreebuff returnTo="/app" className="inline-flex min-h-8 shrink-0 items-center text-xs text-muted hover:text-fg">
+              {expired ? 'Sign in again' : 'Sign in'}
             </SignInWithFreebuff>
           ))}
       </div>

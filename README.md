@@ -92,6 +92,13 @@ stale tab gets 409 with the newer copy, which it adopts. One save is in flight
 at a time; edits made meanwhile coalesce into the next, and `pagehide` writes
 only when something is still unsaved.
 
+A save refused with 401 means the session ended: the client stops writing,
+keeps the workspace in this browser and asks for a sign-in. That copy is
+recorded in `m3tal-review:resume` (account `sub` plus the `updatedAt` it was
+based on), and the next sign-in replays it to the account before the account's
+own copy is loaded. If the account changed in the meantime the replay is
+refused, the newer account copy wins, and the browser copy is left in place.
+
 For a normalised schema (per-issue rows, comments as their own table), replace
 the JSON row with tables and turn each action in `store.ts` into its route,
 keeping the local update for the optimistic UI and moving the `updatedAt`
