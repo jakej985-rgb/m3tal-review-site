@@ -15,7 +15,7 @@ import { LABEL_COLORS, type Label } from '@/data'
 import { cn } from '@/lib/cn'
 import { setTheme, useTheme } from '@/lib/theme'
 import { PageHeader } from './IssuesView'
-import { addLabel, addMember, getState, patchLabel, removeLabel, removeMember, renameWorkspace, resetDemo, useStore } from './store'
+import { addLabel, addMember, getState, patchLabel, removeLabel, removeMember, renameWorkspace, resetDemo, restoreLabel, useStore } from './store'
 
 type Tab = 'general' | 'labels' | 'members'
 
@@ -78,8 +78,11 @@ function LabelRow({ label, count }: { label: Label; count: number }) {
         label={`Delete label ${label.name}`}
         size="sm"
         onClick={() => {
-          removeLabel(label.id)
-          toast({ title: `Label ${label.name} deleted`, action: { label: 'Undo', run: () => addLabel(label.name, label.color) } })
+          const removed = removeLabel(label.id)
+          toast({
+            title: `Label ${label.name} deleted`,
+            action: { label: 'Undo', run: () => removed && restoreLabel(removed) },
+          })
         }}
       >
         <Trash2 className="size-4" />

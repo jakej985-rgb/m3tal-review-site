@@ -76,13 +76,22 @@ export function DetailPane({ number, onClose, onStep, className }: Props) {
   const [desc, setDesc] = useState(issue?.description ?? '')
   const [comment, setComment] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // True while this textarea holds text the visitor typed but has not committed.
+  const descDirty = useRef(false)
 
   useEffect(() => {
     setDesc(issue?.description ?? '')
     setConfirmDelete(false)
+    descDirty.current = false
     // reset only when switching issues
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [number])
+
+  // The saved description can change under this pane (the edit dialog, another
+  // tab). Follow it, unless the visitor is mid-edit here.
+  useEffect(() => {
+    if (!descDirty.current) setDesc(issue?.description ?? '')
+  }, [issue?.description])
 
   if (!issue) {
     return (
@@ -177,8 +186,14 @@ export function DetailPane({ number, onClose, onStep, className }: Props) {
             aria-label="Description"
             placeholder="Add a description…"
             value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            onBlur={() => desc !== issue.description && patchIssue(issue.number, { description: desc })}
+            onChange={(e) => {
+              descDirty.current = true
+              setDesc(e.target.value)
+            }}
+            onBlur={() => {
+              descDirty.current = false
+              if (desc !== issue.description) patchIssue(issue.number, { description: desc })
+            }}
             className="mt-2 [&_textarea]:min-h-20 [&_textarea]:border-transparent [&_textarea]:px-0 [&_textarea]:text-muted [&_textarea]:hover:border-transparent [&_textarea]:focus:border-line [&_textarea]:focus:px-2"
           />
         </motion.div>
