@@ -97,7 +97,9 @@ save is in flight at a time; edits made meanwhile coalesce into the next, and
 rejected three times, the newest copy wins instead of looping, and the copy
 that lost is parked in this browser under `m3tal-review:kept:<sub>`, filed by
 the account that was saving, so signing in as someone else here neither shows
-nor restores it. The sidebar row says so and offers **Restore** (put those
+nor restores it. A copy the earlier build left under the bare
+`m3tal-review:kept` key carries no account, so a page load drops it rather than
+offer it to whoever signs in first. The sidebar row says so and offers **Restore** (put those
 edits back and save them over the account's copy) and **Discard** (forget
 them). A restore keeps the record until its save is acknowledged, so a failed
 or interrupted one can be tried again; discarding clears it straight away.

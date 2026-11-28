@@ -141,6 +141,20 @@ function forgetKept() {
 }
 
 /**
+  The build before scoping parked one copy under the bare `m3tal-review:kept`
+  key, with no account on it. Nothing can say whose edits those are, and handing
+  them to whoever signs in here first is the leak scoping exists to prevent, so
+  the record is dropped at boot instead of being offered to an account.
+*/
+function dropLegacyKept() {
+  try {
+    localStorage.removeItem(KEPT_PREFIX)
+  } catch {
+    /* storage unavailable: nothing to clean up */
+  }
+}
+
+/**
   Park a copy the merge gave up on, so the visitor can put it back. It is not
   replayed on its own: the account's copy already won. Only a save to an account
   can lose a merge, so there is always a `sub` to file it under.
@@ -166,6 +180,8 @@ function update(fn: (s: State) => State) {
 }
 
 if (typeof window !== 'undefined') {
+  // A copy from the pre-scoping build has no account to file it under.
+  dropLegacyKept()
   // Another tab changed the data: pick it up.
   window.addEventListener('storage', (e) => {
     if (remote || e.key !== KEY) return

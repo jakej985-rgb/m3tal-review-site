@@ -291,6 +291,28 @@ test('a parked copy belongs to the account that parked it', async () => {
   await waitFor(() => keptStored() === undefined)
 })
 
+test('a copy parked by the pre-scoping build is dropped, not given to an account', async () => {
+  const store = await import('../src/app/store')
+  // The old build's record: the bare key, with no account on it.
+  const stale = store.getState() as Workspace
+  const orphan = { savedAt: 1, state: { ...stale, issues: [{ ...stale.issues[0], number: 7_777, title: 'Orphan' }, ...stale.issues] } }
+  memory.set('m3tal-review:kept', JSON.stringify(orphan))
+  // An account's own parked copy, filed properly, is not the orphan's business.
+  const owned = JSON.stringify({ savedAt: 2, state: stale })
+  memory.set(keptKey(), owned)
+  const before = puts.length
+
+  // The next page load drops the ownerless record instead of offering it here.
+  const next = await freshStore('legacy-boot')
+  await next.bootstrapAuth()
+  expect(memory.get('m3tal-review:kept')).toBeUndefined()
+  expect(keptStored()).toBe(owned)
+  expect(titles(next.getState() as Workspace)).not.toContain('Orphan')
+  await new Promise((r) => setTimeout(r, 400))
+  // Nothing was restored or saved on its behalf.
+  expect(puts.length).toBe(before)
+})
+
 test('a 401 on the restore save leaves the record in storage', async () => {
   const store = await import('../src/app/store')
   await parkACopy(store, 'Expire', 9_040)
